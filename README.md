@@ -48,7 +48,7 @@ truce/
 
 ### Claim Cards
 - **Evidence Integration**: Automatic StatCan data fetching
-- **Model Panel**: GPT-4, Claude-3 independent evaluations
+- **Model Panel**: 5, Claude-4 Sonnet independent evaluations
 - **Provenance Pills**: W3C Verifiable Credentials
 - **Replay Bundles**: Complete reproducibility packages
 
@@ -105,7 +105,7 @@ FUSEKI_URL=http://localhost:3030
 
 - **Statistics Canada**: Crime Severity Index (Table 35-10-0026-01)
 - **Wikidata**: Entity linking (Q16 = Canada)
-- **Model APIs**: OpenAI GPT-4, Anthropic Claude-3
+- **Model APIs**: OpenAI GPT-5, Anthropic Claude Sonnet 4
 
 ## Limitations
 

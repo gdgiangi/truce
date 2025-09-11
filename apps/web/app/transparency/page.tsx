@@ -79,7 +79,7 @@ export default function TransparencyPage() {
                           alt="OpenAI logo"
                           className="w-4 h-4 object-contain"
                         />
-                        <span className="text-sm">GPT-4</span>
+                        <span className="text-sm">GPT-5</span>
                       </div>
                       <Badge variant="outline">OpenAI</Badge>
                     </div>

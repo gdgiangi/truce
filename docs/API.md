@@ -77,7 +77,7 @@ POST /claims/{claim_id}/panel/run
 Content-Type: application/json
 
 {
-  "models": ["gpt-4", "claude-3"],
+  "models": ["gpt-5", "claude-3"],
   "temperature": 0.1
 }
 ```
@@ -89,7 +89,7 @@ Content-Type: application/json
   "assessments": [
     {
       "id": "uuid",
-      "model_name": "gpt-4",
+      "model_name": "gpt-5",
       "verdict": "mixed",
       "confidence": 0.75,
       "citations": ["evidence-uuid"],

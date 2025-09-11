@@ -158,7 +158,7 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
                     response_text = json_match.group()
             
         else:
-            # Standard GPT-4 and other models using chat completions
+            # Standard GPT-5 and other models using chat completions
             request_params = {
                 "model": model_name,
                 "messages": [
@@ -330,7 +330,7 @@ async def get_default_models() -> List[str]:
     
     if not models:
         # Mock models for demo purposes when no API keys available
-        models = ["gpt-4-demo", "claude-3-demo"]
+        models = ["gpt-5-demo", "claude-3-demo"]
     
     return models
 
@@ -340,9 +340,9 @@ async def create_mock_assessments(claim: Claim) -> List[ModelAssessment]:
     
     mock_assessments = []
     
-    # Mock GPT-4 assessment
+    # Mock GPT-5 assessment
     gpt_assessment = ModelAssessment(
-        model_name="gpt-4-demo",
+        model_name="gpt-5-demo",
         verdict=VerdictType.MIXED,
         confidence=0.75,
         citations=[claim.evidence[0].id] if claim.evidence else [],

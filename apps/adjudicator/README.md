@@ -6,7 +6,7 @@ FastAPI-based service for claim evaluation, evidence collection, and consensus b
 
 - **Claims Management**: Create and evaluate contentious claims
 - **Evidence Integration**: Automatic StatCan data fetching via REST API
-- **Multi-Model Panel**: Independent evaluations from GPT-4, Claude-3, etc.
+- **Multi-Model Panel**: Independent evaluations from GPT-5, Claude-4 Sonnet, etc.
 - **Consensus Building**: Pol.is-inspired voting and clustering
 - **Reproducibility**: Complete replay bundles for transparency
 - **RDF/JSON-LD**: Semantic web integration with custom vocabulary
@@ -130,7 +130,7 @@ evidence_list = await fetch_crime_severity_data()
 ## Multi-Model Panel
 
 ### Supported Models
-- OpenAI: GPT-4, GPT-3.5-turbo
+- OpenAI: GPT-5, GPT-3.5-turbo
 - Anthropic: Claude-3 Sonnet, Claude-3 Haiku
 
 ### Process
@@ -144,7 +144,7 @@ evidence_list = await fetch_crime_severity_data()
 ```python
 from truce_adjudicator.panel.run_panel import run_panel_evaluation
 
-assessments = await run_panel_evaluation(claim, ["gpt-4", "claude-3"])
+assessments = await run_panel_evaluation(claim, ["gpt-5", "claude-3"])
 # Returns list of ModelAssessment objects
 ```
 
