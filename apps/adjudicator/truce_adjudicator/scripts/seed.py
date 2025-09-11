@@ -4,6 +4,8 @@
 import asyncio
 import sys
 import os
+import httpx
+import json
 from pathlib import Path
 
 # Add project root to path
@@ -15,9 +17,10 @@ sys.path.insert(0, str(current_dir.parent))
 os.chdir(str(current_dir.parent))
 
 from truce_adjudicator.models import Claim, ConsensusStatement
-from truce_adjudicator.main import claims_db, statements_db
 from truce_adjudicator.statcan.fetch_csi import fetch_crime_severity_data
-from truce_adjudicator.panel.run_panel import create_mock_assessments
+
+
+API_BASE = "http://localhost:8000"
 
 
 async def seed_canadian_crime_claim():
@@ -25,42 +28,70 @@ async def seed_canadian_crime_claim():
     
     print("🌱 Seeding Canadian violent crime claim...")
     
-    # Create the main claim
-    claim = Claim(
-        text="Violent crime in Canada is rising.",
-        topic="canada-crime",
-        entities=["Q16"]  # Canada on Wikidata
-    )
+    # Create the main claim via API
+    claim_data = {
+        "text": "Violent crime in Canada is rising.",
+        "topic": "canada-crime",
+        "entities": ["Q16"]  # Canada on Wikidata
+    }
     
-    # Fetch Statistics Canada evidence
-    try:
-        print("📊 Fetching StatCan crime severity data...")
-        evidence_list = await fetch_crime_severity_data()
-        claim.evidence.extend(evidence_list)
-        print(f"✅ Added {len(evidence_list)} evidence items")
-    except Exception as e:
-        print(f"❌ Failed to fetch StatCan data: {e}")
-        return None
-    
-    # Create mock model assessments
-    try:
-        print("🤖 Creating model assessments...")
-        assessments = await create_mock_assessments(claim)
-        claim.model_assessments.extend(assessments)
-        print(f"✅ Added {len(assessments)} model assessments")
-    except Exception as e:
-        print(f"❌ Failed to create assessments: {e}")
-    
-    # Store claim with slug
-    claim_slug = "violent-crime-canada"
-    claims_db[claim_slug] = claim
-    
-    print(f"✅ Created claim: {claim.text}")
-    print(f"   Slug: {claim_slug}")
-    print(f"   Evidence: {len(claim.evidence)} items")
-    print(f"   Assessments: {len(claim.model_assessments)} models")
-    
-    return claim
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            # Create claim
+            response = await client.post(f"{API_BASE}/claims", json=claim_data)
+            response.raise_for_status()
+            claim_response = response.json()
+            
+            # Calculate the correct slug the same way the API does
+            slug = claim_data["text"].lower().replace(" ", "-").replace(".", "")[:50]
+            slug = ''.join(c for c in slug if c.isalnum() or c == '-')
+            
+            print(f"✅ Created claim: {claim_data['text']}")
+            print(f"   Slug: {slug}")
+            
+            # Add Statistics Canada evidence
+            try:
+                print("📊 Fetching StatCan crime severity data...")
+                evidence_request = {
+                    "source_type": "statcan", 
+                    "params": {}
+                }
+                
+                evidence_response = await client.post(
+                    f"{API_BASE}/claims/{slug}/evidence:statcan",
+                    json=evidence_request
+                )
+                if evidence_response.status_code == 200:
+                    evidence_result = evidence_response.json()
+                    print(f"✅ Added {evidence_result.get('evidence_count', 0)} evidence items via API")
+                else:
+                    print(f"⚠️  Evidence API call returned {evidence_response.status_code}: {evidence_response.text}")
+                
+            except Exception as e:
+                print(f"❌ Failed to fetch StatCan data: {e}")
+            
+            # Run model panel
+            try:
+                print("🤖 Creating model assessments...")
+                panel_response = await client.post(
+                    f"{API_BASE}/claims/{slug}/panel/run",
+                    json={"models": ["gpt-4", "claude-3"]}
+                )
+                if panel_response.status_code == 200:
+                    panel_result = panel_response.json()
+                    assessment_count = len(panel_result.get('assessments', []))
+                    print(f"✅ Added {assessment_count} model assessments")
+                else:
+                    print(f"⚠️  Panel API call returned {panel_response.status_code}: {panel_response.text}")
+                    
+            except Exception as e:
+                print(f"❌ Failed to create assessments: {e}")
+            
+            return claim_response
+            
+        except Exception as e:
+            print(f"❌ Failed to create claim: {e}")
+            return None
 
 
 async def seed_consensus_statements():
@@ -84,25 +115,53 @@ async def seed_consensus_statements():
         "Transparency in crime data helps inform public understanding"
     ]
     
-    statements = []
-    for statement_text in statements_data:
-        statement = ConsensusStatement(
-            text=statement_text,
-            topic=topic
-        )
-        statements.append(statement)
+    created_count = 0
     
-    # Store statements
-    statements_db[topic] = statements
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            for statement_text in statements_data:
+                statement_data = {
+                    "text": statement_text,
+                    "evidence_links": []
+                }
+                
+                response = await client.post(
+                    f"{API_BASE}/consensus/{topic}/statements",
+                    json=statement_data
+                )
+                
+                if response.status_code == 200:
+                    created_count += 1
+                else:
+                    print(f"⚠️  Failed to create statement: {statement_text[:50]}...")
+                    
+        except Exception as e:
+            print(f"❌ Failed to create consensus statements: {e}")
+            return 0
     
-    print(f"✅ Created {len(statements)} consensus statements for topic: {topic}")
-    
-    return statements
+    print(f"✅ Created {created_count} consensus statements for topic: {topic}")
+    return created_count
 
 
 async def main():
     """Main seeding function"""
     print("🚀 Starting Truce demo seeding process...\n")
+    
+    # Wait a moment for the API to be ready
+    print("⏳ Waiting for API to be ready...")
+    await asyncio.sleep(2)
+    
+    # Test API connection
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{API_BASE}/")
+            if response.status_code != 200:
+                print("❌ API not ready, exiting...")
+                return
+            print("✅ API is ready")
+    except Exception as e:
+        print(f"❌ Cannot connect to API: {e}")
+        return
     
     # Seed the main claim
     claim = await seed_canadian_crime_claim()
@@ -113,15 +172,15 @@ async def main():
     print()
     
     # Seed consensus statements  
-    statements = await seed_consensus_statements()
+    statement_count = await seed_consensus_statements()
     
     print()
     print("🎉 Seeding completed successfully!")
     print()
     print("Demo URLs:")
-    print(f"  Claim Card: http://localhost:3000/claim/violent-crime-canada")
+    print(f"  Claim Card: http://localhost:3000/claim/violent-crime-in-canada-is-rising")
     print(f"  Consensus Board: http://localhost:3000/consensus/canada-crime")
-    print(f"  API: http://localhost:8000/claims/violent-crime-canada")
+    print(f"  API: http://localhost:8000/claims/violent-crime-in-canada-is-rising")
 
 
 if __name__ == "__main__":

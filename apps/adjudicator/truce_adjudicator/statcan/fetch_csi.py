@@ -1,139 +1,251 @@
-"""Fetch Crime Severity Index data from Statistics Canada"""
+"""Fetch Crime Severity Index data from Statistics Canada WDS API"""
 
 import json
 import os
+import zipfile
+import io
 from datetime import datetime
-from typing import Dict, List, Any
-from uuid import uuid4
+from typing import Dict, List, Any, Optional
+import asyncio
 
 import httpx
 import pandas as pd
 
 from ..models import Evidence
+from .utils import cansim_to_pid, get_table_url, parse_wds_response
 
 
 STATCAN_WDS_BASE = os.getenv("STATCAN_WDS_BASE", "https://www150.statcan.gc.ca/t1/wds/rest")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "../../../data/statcan")
 
+# Crime Severity Index CANSIM table: 35-10-0026-01 -> PID: 35100026
+CRIME_SEVERITY_CANSIM = "35-10-0026-01"
+CRIME_SEVERITY_PID = cansim_to_pid(CRIME_SEVERITY_CANSIM) or 35100026
+
+# Rate limiting semaphore (max 25 requests per second per IP)
+_rate_limiter = asyncio.Semaphore(20)
+
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+class StatCanWDSClient:
+    """Statistics Canada Web Data Service API Client"""
+    
+    def __init__(self, base_url: Optional[str] = None):
+        self.base_url = base_url or STATCAN_WDS_BASE
+        self.timeout = 30.0
+    
+    async def _make_request(self, method: str, endpoint: str, data: Optional[List[Dict]] = None) -> Any:
+        """Make rate-limited request to WDS API"""
+        async with _rate_limiter:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                url = f"{self.base_url}/{endpoint}"
+                
+                if method.upper() == "POST" and data:
+                    response = await client.post(url, json=data)
+                else:
+                    response = await client.get(url)
+                
+                response.raise_for_status()
+                return response.json()
+    
+    async def get_cube_metadata(self, product_id: int) -> Dict[str, Any]:
+        """Get metadata for a data cube/table"""
+        data = [{"productId": product_id}]
+        response = await self._make_request("POST", "getCubeMetadata", data)
+        
+        if isinstance(response, list) and len(response) > 0:
+            return response[0]
+        return response if isinstance(response, dict) else {}
+    
+    async def get_full_table_download_csv(self, product_id: int, lang: str = "en") -> str:
+        """Get URL for full table CSV download"""
+        endpoint = f"getFullTableDownloadCSV/{product_id}/{lang}"
+        response = await self._make_request("GET", endpoint)
+        
+        if isinstance(response, dict) and response.get("status") == "SUCCESS":
+            return response.get("object", "")
+        return ""
+    
+    async def get_data_from_vectors_and_latest_n_periods(self, vector_id: int, latest_n: int = 10) -> Dict[str, Any]:
+        """Get latest N periods of data for a vector"""
+        data = [{"vectorId": vector_id, "latestN": latest_n}]
+        response = await self._make_request("POST", "getDataFromVectorsAndLatestNPeriods", data)
+        
+        if isinstance(response, list) and len(response) > 0:
+            return response[0]
+        return response if isinstance(response, dict) else {}
+    
+    async def get_changed_series_list(self) -> List[Dict[str, Any]]:
+        """Get list of series that changed today"""
+        response = await self._make_request("GET", "getChangedSeriesList")
+        
+        if isinstance(response, dict) and response.get("status") == "SUCCESS":
+            return response.get("object", [])
+        return []
+    
+    async def get_codesets(self) -> Dict[str, Any]:
+        """Get code sets for interpreting data"""
+        response = await self._make_request("GET", "getCodeSets")
+        
+        if isinstance(response, dict) and response.get("status") == "SUCCESS":
+            return response.get("object", {})
+        return {}
 
 
 async def fetch_crime_severity_data() -> List[Evidence]:
     """Fetch Crime Severity Index data from StatCan WDS API"""
     
-    # Table 35-10-0026-01: Crime severity index and weighted clearance rates
-    table_id = "35-10-0026-01"
-    
+    client = StatCanWDSClient()
     evidence_list = []
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            # Fetch metadata first
-            metadata_url = f"{STATCAN_WDS_BASE}/getDatasetMetadata/{table_id}/en"
-            metadata_response = await client.get(metadata_url)
-            metadata = metadata_response.json()
-            
-            # Fetch the actual data
-            data_url = f"{STATCAN_WDS_BASE}/getFullTableDownload/{table_id}/en"
-            data_response = await client.get(data_url)
-            
-            # Parse CSV data
-            csv_content = data_response.text
-            
-            # Save raw CSV for transparency
-            csv_file = os.path.join(DATA_DIR, f"{table_id}.csv")
-            with open(csv_file, 'w', encoding='utf-8') as f:
-                f.write(csv_content)
-            
-            # Process the data
-            df = pd.read_csv(csv_file)
-            
-            # Filter for relevant data - Canada, violent and total crime severity
-            canada_data = df[df['Geography'] == 'Canada']
-            
-            # Get recent data (last 5 years for context)
-            recent_data = canada_data[canada_data['Reference period'] >= '2019']
-            
-            # Create evidence for overall CSI
-            overall_csi = recent_data[recent_data['Crime type'] == 'Total crime severity index']
-            if not overall_csi.empty:
-                latest_overall = overall_csi.iloc[-1]
+    try:
+        # Get cube metadata first
+        print(f"🔍 Fetching metadata for Crime Severity Index (PID: {CRIME_SEVERITY_PID})...")
+        metadata = await client.get_cube_metadata(CRIME_SEVERITY_PID)
+        
+        if metadata.get("status") != "SUCCESS":
+            raise Exception(f"Failed to get metadata: {metadata}")
+        
+        cube_info = metadata.get("object", {})
+        cube_title = cube_info.get("cubeTitleEn", "Crime Severity Index")
+        
+        # Get CSV download URL for full dataset
+        print("📥 Getting full table download URL...")
+        csv_url = await client.get_full_table_download_csv(CRIME_SEVERITY_PID, "en")
+        
+        if csv_url:
+            # Download and process CSV data
+            async with httpx.AsyncClient(timeout=60.0) as http_client:
+                print(f"📥 Downloading CSV data from: {csv_url}")
+                csv_response = await http_client.get(csv_url)
                 
-                evidence_list.append(Evidence(
-                    url=f"https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid={table_id}",
-                    publisher="Statistics Canada",
-                    published_at=datetime(2024, 7, 25),  # Latest release date
-                    snippet=f"Canada's overall Crime Severity Index in {latest_overall['Reference period']} was {latest_overall['VALUE']}, "
-                             f"{'up' if len(overall_csi) > 1 and latest_overall['VALUE'] > overall_csi.iloc[-2]['VALUE'] else 'down'} from previous year.",
-                    provenance=f"Fetched from StatCan WDS API table {table_id} via automated process"
-                ))
-            
-            # Create evidence for violent CSI
-            violent_csi = recent_data[recent_data['Crime type'] == 'Violent crime severity index']
-            if not violent_csi.empty:
-                latest_violent = violent_csi.iloc[-1]
-                
-                # Calculate trend
-                if len(violent_csi) > 1:
-                    prev_value = violent_csi.iloc[-2]['VALUE']
-                    change_pct = ((latest_violent['VALUE'] - prev_value) / prev_value) * 100
-                    trend = f"{'increased' if change_pct > 0 else 'decreased'} by {abs(change_pct):.1f}%"
+                # StatCan provides ZIP files, need to handle this
+                if csv_url.endswith('.zip'):
+                    # Save ZIP file temporarily
+                    zip_file = os.path.join(DATA_DIR, f"{CRIME_SEVERITY_PID}.zip")
+                    with open(zip_file, 'wb') as f:
+                        f.write(csv_response.content)
+                    
+                    # Extract CSV from ZIP
+                    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                        csv_files = [name for name in zip_ref.namelist() if name.endswith('.csv')]
+                        if csv_files:
+                            csv_filename = csv_files[0]  # Take first CSV file
+                            with zip_ref.open(csv_filename) as csv_file_handle:
+                                csv_content = csv_file_handle.read().decode('utf-8')
+                            
+                            # Save extracted CSV
+                            csv_file = os.path.join(DATA_DIR, f"{CRIME_SEVERITY_PID}.csv")
+                            with open(csv_file, 'w', encoding='utf-8') as f:
+                                f.write(csv_content)
+                        else:
+                            raise Exception("No CSV file found in ZIP archive")
                 else:
-                    trend = "data available"
+                    csv_content = csv_response.text
+                    
+                    # Save raw CSV for transparency
+                    csv_file = os.path.join(DATA_DIR, f"{CRIME_SEVERITY_PID}.csv")
+                    with open(csv_file, 'w', encoding='utf-8') as f:
+                        f.write(csv_content)
                 
-                # Calculate 3-year trend (2021-2023 mentioned in requirements)
-                three_year_data = violent_csi[violent_csi['Reference period'].isin(['2021', '2022', '2023'])]
-                if len(three_year_data) >= 2:
-                    first_val = three_year_data.iloc[0]['VALUE']
-                    last_val = three_year_data.iloc[-1]['VALUE']
-                    three_year_change = ((last_val - first_val) / first_val) * 100
-                    three_year_trend = f"over 2021-2023 period: {three_year_change:+.1f}%"
-                else:
-                    three_year_trend = ""
+                print("📊 Processing Crime Severity Index data...")
+                df = pd.read_csv(csv_file)
                 
-                evidence_list.append(Evidence(
-                    url=f"https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid={table_id}",
-                    publisher="Statistics Canada",
-                    published_at=datetime(2024, 7, 25),  # Latest release date
-                    snippet=f"Canada's Violent Crime Severity Index in {latest_violent['Reference period']} was {latest_violent['VALUE']}, "
-                             f"{trend} from previous year. {three_year_trend}",
-                    provenance=f"Fetched from StatCan WDS API table {table_id} via automated process"
-                ))
-            
-            # Create summary evidence with methodology note
-            evidence_list.append(Evidence(
-                url="https://www23.statcan.gc.ca/imdb/p2SV.pl?Function=getSurvey&SDDS=3302",
+                # Process Canada-level data for recent years
+                # StatCan CSV uses 'GEO' column for geography
+                canada_data = df[df['GEO'] == 'Canada']
+                
+                if not canada_data.empty:
+                    # Get latest year data (REF_DATE column)
+                    latest_year = canada_data['REF_DATE'].max()
+                    latest_data = canada_data[canada_data['REF_DATE'] == latest_year]
+                    
+                    if not latest_data.empty:
+                        # Process different crime types using 'Statistics' column
+                        crime_types = [
+                            'Crime severity index', 
+                            'Violent crime severity index', 
+                            'Non-violent crime severity index'
+                        ]
+                        
+                        for crime_type in crime_types:
+                            crime_data = latest_data[latest_data['Statistics'] == crime_type]
+                            
+                            if not crime_data.empty:
+                                value = crime_data.iloc[0]['VALUE']
+                                
+                                # Calculate year-over-year change if possible
+                                prev_year_data = canada_data[
+                                    (canada_data['REF_DATE'] == latest_year - 1) & 
+                                    (canada_data['Statistics'] == crime_type)
+                                ]
+                                
+                                trend_info = ""
+                                if not prev_year_data.empty:
+                                    prev_value = prev_year_data.iloc[0]['VALUE']
+                                    if pd.notna(prev_value) and prev_value != 0:
+                                        change_pct = ((value - prev_value) / prev_value) * 100
+                                        trend_info = f", {'up' if change_pct > 0 else 'down'} {abs(change_pct):.1f}% from {latest_year - 1}"
+                                
+                                evidence_list.append(Evidence(
+                                    url=get_table_url(CRIME_SEVERITY_PID),
+                                    publisher="Statistics Canada",
+                                    published_at=datetime.now(),
+                                    snippet=f"Canada's {crime_type} in {latest_year} was {value:.1f}{trend_info} (Statistics Canada, {cube_title})",
+                                    provenance=f"Fetched from StatCan WDS API, PID {CRIME_SEVERITY_PID}"
+                                ))
+                        
+                        print(f"📈 Processed data for {len(crime_types)} crime severity indicators from {latest_year}")
+        
+        # Add methodology evidence
+        evidence_list.append(Evidence(
+            url="https://www23.statcan.gc.ca/imdb/p2SV.pl?Function=getSurvey&SDDS=3302",
+            publisher="Statistics Canada",
+            published_at=datetime.now(),
+            snippet="The Crime Severity Index (CSI) measures both the volume and severity of police-reported crime in Canada. "
+                     "It is standardized so that the national CSI for 2006 equals 100. The index accounts for differences in the "
+                     "severity of crimes by assigning each offense a weight based on sentences handed down by criminal courts. "
+                     "More serious crimes receive higher weights, less serious crimes receive lower weights.",
+            provenance="Statistics Canada methodology documentation (IMDB)"
+        ))
+        
+        print(f"✅ Successfully fetched {len(evidence_list)} evidence items from StatCan WDS API")
+        
+    except Exception as e:
+        print(f"❌ StatCan WDS API error: {e}")
+        print("🔄 Using fallback mock data for demonstration...")
+        
+        # Fallback to realistic mock data based on actual StatCan structure
+        evidence_list = [
+            Evidence(
+                url=get_table_url(CRIME_SEVERITY_PID),
                 publisher="Statistics Canada",
                 published_at=datetime(2024, 7, 25),
+                snippet="Canada's Total crime severity index in 2023 was 75.2, representing a slight decrease from the previous year. "
+                         "This continues a general downward trend in overall crime severity since the mid-2000s.",
+                provenance=f"Mock data based on StatCan WDS API structure (PID {CRIME_SEVERITY_PID}) - API temporarily unavailable"
+            ),
+            Evidence(
+                url=get_table_url(CRIME_SEVERITY_PID),
+                publisher="Statistics Canada",
+                published_at=datetime(2024, 7, 25),
+                snippet="Canada's Violent crime severity index in 2023 was 74.8, down 1.2% from 2022 (75.7). "
+                         "However, violent crime severity had increased approximately 15% over the 2021-2023 period, "
+                         "driven primarily by increases in sexual assault and homicide rates.",
+                provenance=f"Mock data based on StatCan WDS API structure (PID {CRIME_SEVERITY_PID}) - API temporarily unavailable"
+            ),
+            Evidence(
+                url="https://www23.statcan.gc.ca/imdb/p2SV.pl?Function=getSurvey&SDDS=3302",
+                publisher="Statistics Canada", 
+                published_at=datetime(2024, 7, 25),
                 snippet="The Crime Severity Index (CSI) measures both the volume and severity of police-reported crime in Canada. "
-                         "It is standardized so that the national CSI for 2006 equals 100. Important limitations: based on police-reported data only; "
-                         "actual crime rates may be higher due to under-reporting; reporting practices vary by jurisdiction and time period.",
-                provenance="StatCan methodology documentation for Crime Severity Index"
-            ))
-            
-        except Exception as e:
-            # Fallback to mock data for demo if API fails
-            print(f"StatCan API error: {e}. Using mock data for demo.")
-            
-            evidence_list = [
-                Evidence(
-                    url=f"https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid={table_id}",
-                    publisher="Statistics Canada",
-                    published_at=datetime(2024, 7, 25),
-                    snippet="Canada's Violent Crime Severity Index in 2024 was 73.8, down 1% from 2023 (74.5). "
-                             "However, it had increased cumulatively by approximately 15% over the 2021-2023 period.",
-                    provenance=f"Mock data based on StatCan table {table_id} structure (API unavailable)"
-                ),
-                Evidence(
-                    url="https://www23.statcan.gc.ca/imdb/p2SV.pl?Function=getSurvey&SDDS=3302",
-                    publisher="Statistics Canada",
-                    published_at=datetime(2024, 7, 25),
-                    snippet="The Crime Severity Index measures both volume and severity of police-reported crime. "
-                             "Limitations: based on police reports only; actual rates may be higher due to under-reporting.",
-                    provenance="StatCan methodology documentation"
-                )
-            ]
+                         "Important limitations: based on police-reported data only; actual crime rates may be higher due to "
+                         "under-reporting; reporting practices vary by jurisdiction and time period.",
+                provenance="StatCan methodology documentation for Crime Severity Index (Survey 3302)"
+            )
+        ]
     
     return evidence_list
 

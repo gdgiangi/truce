@@ -47,7 +47,9 @@ interface ClaimResponse {
 
 async function getClaim(slug: string): Promise<ClaimResponse | null> {
   try {
-    const response = await fetch(`http://localhost:8000/claims/${slug}`, {
+    // Use the adjudicator API URL from environment variable
+    const adjudicatorUrl = process.env.ADJUDICATOR_API_URL || 'http://localhost:8000';
+    const response = await fetch(`${adjudicatorUrl}/claims/${slug}`, {
       cache: 'no-store'
     });
     

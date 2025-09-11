@@ -53,7 +53,7 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
 
   const loadConsensusSummary = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/consensus/${params.topic}/summary`);
+      const response = await fetch(`/api/consensus/${params.topic}/summary`);
       if (response.ok) {
         const data = await response.json();
         setSummary(data);
@@ -67,7 +67,7 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
 
   const handleVote = async (statementId: string, vote: "agree" | "disagree" | "pass") => {
     try {
-      const response = await fetch(`http://localhost:8000/consensus/${params.topic}/votes`, {
+      const response = await fetch(`/api/consensus/${params.topic}/votes`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

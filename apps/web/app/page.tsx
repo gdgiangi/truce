@@ -25,7 +25,7 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-6 justify-center items-center">
               <Button asChild size="lg" className="px-8 py-4 text-base elegant-hover">
-                <Link href="/claim/violent-crime-canada" className="flex items-center gap-2">
+                <Link href="/claim/violent-crime-in-canada-is-rising" className="flex items-center gap-2">
                   View Demo Claim
                   <ArrowRight className="w-4 h-4" />
                 </Link>
@@ -126,7 +126,7 @@ export default function Home() {
                   for this controversial claim about Canadian crime trends.
                 </p>
                 <Button asChild className="w-full py-3 elegant-hover">
-                  <Link href="/claim/violent-crime-canada" className="flex items-center justify-center gap-2">
+                  <Link href="/claim/violent-crime-in-canada-is-rising" className="flex items-center justify-center gap-2">
                     View Claim Analysis
                     <ArrowRight className="w-4 h-4" />
                   </Link>
