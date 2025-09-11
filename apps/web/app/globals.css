@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 99%;
+    --foreground: 220 13% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 13%;
+    --primary: 220 13% 13%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 210 11% 96%;
+    --secondary-foreground: 220 13% 13%;
+    --muted: 210 11% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 210 11% 96%;
+    --accent-foreground: 220 13% 13%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 220 13% 13%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 13% 6%;
+    --foreground: 0 0% 98%;
+    --card: 220 13% 9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 220 13% 9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 220 13% 13%;
+    --secondary: 220 13% 15%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 220 13% 15%;
+    --muted-foreground: 220 9% 65%;
+    --accent: 220 13% 15%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 15%;
+    --input: 220 13% 15%;
+    --ring: 0 0% 98%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  
+  /* Premium typography and spacing */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-medium tracking-tight;
+  }
+  
+  /* Refined spacing and visual hierarchy */
+  .section-spacing {
+    @apply py-24 lg:py-32;
+  }
+  
+  .container-spacing {
+    @apply px-6 lg:px-8;
+  }
+  
+  /* Premium card styling */
+  .premium-card {
+    @apply bg-card/50 backdrop-blur-sm border border-border/50;
+  }
+  
+  /* Elegant hover effects */
+  .elegant-hover {
+    @apply transition-all duration-300 ease-out;
+  }
+  
+  .elegant-hover:hover {
+    @apply translate-y-[-2px] shadow-lg shadow-black/5;
+  }
+}

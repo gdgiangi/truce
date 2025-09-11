@@ -1,0 +1,185 @@
+@prefix tr: <https://truce.dev/vocab#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix schema: <http://schema.org/> .
+@prefix dc: <http://purl.org/dc/terms/> .
+
+# Ontology metadata
+<https://truce.dev/vocab> a owl:Ontology ;
+    rdfs:label "Truce Vocabulary" ;
+    rdfs:comment "Vocabulary for transparent claim evaluation and consensus building" ;
+    dc:created "2024-01-01"^^xsd:date ;
+    owl:versionInfo "0.1.0" .
+
+# Classes
+
+tr:Claim a owl:Class ;
+    rdfs:label "Claim" ;
+    rdfs:comment "A claim or statement to be evaluated for truth or accuracy" ;
+    rdfs:subClassOf schema:CreativeWork .
+
+tr:Evidence a owl:Class ;
+    rdfs:label "Evidence" ;
+    rdfs:comment "Evidence that supports or refutes a claim" ;
+    rdfs:subClassOf schema:CreativeWork .
+
+tr:ModelAssessment a owl:Class ;
+    rdfs:label "Model Assessment" ;
+    rdfs:comment "An AI model's assessment of a claim" ;
+    rdfs:subClassOf schema:Review .
+
+tr:HumanReview a owl:Class ;
+    rdfs:label "Human Review" ;
+    rdfs:comment "A human expert's review of a claim" ;
+    rdfs:subClassOf schema:Review .
+
+tr:ConsensusStatement a owl:Class ;
+    rdfs:label "Consensus Statement" ;
+    rdfs:comment "A statement used for building consensus on a topic" ;
+    rdfs:subClassOf schema:CreativeWork .
+
+tr:Vote a owl:Class ;
+    rdfs:label "Vote" ;
+    rdfs:comment "A vote on a consensus statement" .
+
+tr:ReplayBundle a owl:Class ;
+    rdfs:label "Replay Bundle" ;
+    rdfs:comment "A reproducibility package containing all inputs and outputs for a claim evaluation" .
+
+# Properties
+
+tr:text a owl:DatatypeProperty ;
+    rdfs:label "text" ;
+    rdfs:comment "The textual content of a claim or statement" ;
+    rdfs:domain tr:Claim, tr:ConsensusStatement ;
+    rdfs:range xsd:string .
+
+tr:entities a owl:ObjectProperty ;
+    rdfs:label "entities" ;
+    rdfs:comment "Wikidata entities referenced in the claim" ;
+    rdfs:domain tr:Claim .
+
+tr:topic a owl:DatatypeProperty ;
+    rdfs:label "topic" ;
+    rdfs:comment "The topic or category of a claim" ;
+    rdfs:domain tr:Claim, tr:ConsensusStatement ;
+    rdfs:range xsd:string .
+
+tr:createdAt a owl:DatatypeProperty ;
+    rdfs:label "created at" ;
+    rdfs:comment "Timestamp when the resource was created" ;
+    rdfs:range xsd:dateTime .
+
+tr:updatedAt a owl:DatatypeProperty ;
+    rdfs:label "updated at" ;
+    rdfs:comment "Timestamp when the resource was last updated" ;
+    rdfs:range xsd:dateTime .
+
+tr:publisher a owl:DatatypeProperty ;
+    rdfs:label "publisher" ;
+    rdfs:comment "The publisher or source of evidence" ;
+    rdfs:domain tr:Evidence ;
+    rdfs:range xsd:string .
+
+tr:publishedAt a owl:DatatypeProperty ;
+    rdfs:label "published at" ;
+    rdfs:comment "When the evidence was originally published" ;
+    rdfs:domain tr:Evidence ;
+    rdfs:range xsd:dateTime .
+
+tr:snippet a owl:DatatypeProperty ;
+    rdfs:label "snippet" ;
+    rdfs:comment "A relevant excerpt or snippet from the evidence" ;
+    rdfs:domain tr:Evidence ;
+    rdfs:range xsd:string .
+
+tr:provenance a owl:DatatypeProperty ;
+    rdfs:label "provenance" ;
+    rdfs:comment "Information about how this evidence was obtained" ;
+    rdfs:domain tr:Evidence ;
+    rdfs:range xsd:string .
+
+tr:modelName a owl:DatatypeProperty ;
+    rdfs:label "model name" ;
+    rdfs:comment "The name/version of the AI model that made the assessment" ;
+    rdfs:domain tr:ModelAssessment ;
+    rdfs:range xsd:string .
+
+tr:verdict a owl:DatatypeProperty ;
+    rdfs:label "verdict" ;
+    rdfs:comment "The assessment verdict (supports, refutes, mixed, uncertain)" ;
+    rdfs:domain tr:ModelAssessment, tr:HumanReview ;
+    rdfs:range [ owl:oneOf ( "supports" "refutes" "mixed" "uncertain" ) ] .
+
+tr:confidence a owl:DatatypeProperty ;
+    rdfs:label "confidence" ;
+    rdfs:comment "Confidence level of the assessment (0.0 to 1.0)" ;
+    rdfs:domain tr:ModelAssessment ;
+    rdfs:range [ a rdfs:Datatype ; owl:onDatatype xsd:decimal ; owl:withRestrictions ( [ xsd:minInclusive 0.0 ] [ xsd:maxInclusive 1.0 ] ) ] .
+
+tr:citations a owl:ObjectProperty ;
+    rdfs:label "citations" ;
+    rdfs:comment "Evidence cited in making this assessment" ;
+    rdfs:domain tr:ModelAssessment ;
+    rdfs:range tr:Evidence .
+
+tr:rationale a owl:DatatypeProperty ;
+    rdfs:label "rationale" ;
+    rdfs:comment "Explanation of the reasoning behind the assessment" ;
+    rdfs:domain tr:ModelAssessment ;
+    rdfs:range xsd:string .
+
+tr:notes a owl:DatatypeProperty ;
+    rdfs:label "notes" ;
+    rdfs:comment "Additional notes from a human reviewer" ;
+    rdfs:domain tr:HumanReview ;
+    rdfs:range xsd:string .
+
+tr:signatureVC a owl:DatatypeProperty ;
+    rdfs:label "signature VC" ;
+    rdfs:comment "W3C Verifiable Credential signature for the review" ;
+    rdfs:domain tr:HumanReview ;
+    rdfs:range xsd:string .
+
+tr:agreeCount a owl:DatatypeProperty ;
+    rdfs:label "agree count" ;
+    rdfs:comment "Number of agree votes" ;
+    rdfs:domain tr:ConsensusStatement ;
+    rdfs:range xsd:nonNegativeInteger .
+
+tr:disagreeCount a owl:DatatypeProperty ;
+    rdfs:label "disagree count" ;
+    rdfs:comment "Number of disagree votes" ;
+    rdfs:domain tr:ConsensusStatement ;
+    rdfs:range xsd:nonNegativeInteger .
+
+tr:passCount a owl:DatatypeProperty ;
+    rdfs:label "pass count" ;
+    rdfs:comment "Number of pass/abstain votes" ;
+    rdfs:domain tr:ConsensusStatement ;
+    rdfs:range xsd:nonNegativeInteger .
+
+tr:agreeRate a owl:DatatypeProperty ;
+    rdfs:label "agree rate" ;
+    rdfs:comment "Proportion of voters who agreed (0.0 to 1.0)" ;
+    rdfs:domain tr:ConsensusStatement ;
+    rdfs:range [ a rdfs:Datatype ; owl:onDatatype xsd:decimal ; owl:withRestrictions ( [ xsd:minInclusive 0.0 ] [ xsd:maxInclusive 1.0 ] ) ] .
+
+tr:clusterId a owl:DatatypeProperty ;
+    rdfs:label "cluster ID" ;
+    rdfs:comment "ID of the consensus cluster this statement belongs to" ;
+    rdfs:domain tr:ConsensusStatement ;
+    rdfs:range xsd:integer .
+
+tr:evidenceLinks a owl:ObjectProperty ;
+    rdfs:label "evidence links" ;
+    rdfs:comment "Evidence items that support this consensus statement" ;
+    rdfs:domain tr:ConsensusStatement ;
+    rdfs:range tr:Evidence .
+
+tr:voteType a owl:DatatypeProperty ;
+    rdfs:label "vote type" ;
+    rdfs:comment "The type of vote (agree, disagree, pass)" ;
+    rdfs:domain tr:Vote ;
+    rdfs:range [ owl:oneOf ( "agree" "disagree" "pass" ) ] .

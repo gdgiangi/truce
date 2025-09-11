@@ -1,0 +1,28 @@
+{
+  "name": "truce",
+  "version": "1.0.0",
+  "description": "A system for transparent, de-escalating dialogue around contentious claims",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev --parallel",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "seed": "cd apps/adjudicator && python -m truce_adjudicator.scripts.seed",
+    "panel": "cd apps/adjudicator && python -m truce_adjudicator.scripts.panel",
+    "consensus": "cd apps/adjudicator && python -m truce_adjudicator.scripts.consensus",
+    "sign": "cd apps/adjudicator && python -m truce_adjudicator.scripts.sign",
+    "publish": "cd apps/adjudicator && python -m truce_adjudicator.scripts.publish"
+  },
+  "devDependencies": {
+    "turbo": "^1.10.12"
+  },
+  "packageManager": "npm@9.0.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

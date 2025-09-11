@@ -1,0 +1,256 @@
+"""Main FastAPI application for Truce Adjudicator"""
+
+import json
+import os
+from datetime import datetime
+from typing import Dict, List, Optional
+from uuid import UUID, uuid4
+
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import httpx
+
+from .models import (
+    Claim,
+    ClaimCreate,
+    ClaimResponse,
+    ConsensusStatement,
+    ConsensusStatementRequest,
+    ConsensusSummary,
+    ConsensusVoteRequest,
+    EvidenceRequest,
+    PanelRequest,
+    Vote,
+    VoteType,
+)
+
+# In-memory storage for demo (replace with proper database)
+claims_db: Dict[str, Claim] = {}
+statements_db: Dict[str, List[ConsensusStatement]] = {}
+votes_db: List[Vote] = []
+
+app = FastAPI(
+    title="Truce Adjudicator",
+    description="Claims, Evidence, and Consensus API",
+    version="0.1.0"
+)
+
+# CORS middleware for development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def get_claim_by_id(claim_id: str) -> Claim:
+    """Get claim by ID, raise 404 if not found"""
+    if claim_id not in claims_db:
+        raise HTTPException(status_code=404, detail="Claim not found")
+    return claims_db[claim_id]
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "service": "truce-adjudicator",
+        "version": "0.1.0",
+        "status": "running",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@app.post("/claims", response_model=ClaimResponse)
+async def create_claim(claim_request: ClaimCreate):
+    """Create a new claim"""
+    claim = Claim(
+        text=claim_request.text,
+        topic=claim_request.topic,
+        entities=claim_request.entities,
+    )
+    
+    # Generate slug from text for URL-friendly ID
+    slug = claim_request.text.lower().replace(" ", "-").replace(".", "")[:50]
+    slug = ''.join(c for c in slug if c.isalnum() or c == '-')
+    
+    claims_db[slug] = claim
+    
+    return ClaimResponse(claim=claim)
+
+
+@app.get("/claims/{claim_id}", response_model=ClaimResponse)
+async def get_claim(claim_id: str):
+    """Get a claim by ID"""
+    claim = get_claim_by_id(claim_id)
+    
+    # Calculate consensus score from model assessments
+    consensus_score = None
+    if claim.model_assessments:
+        support_count = sum(1 for ma in claim.model_assessments if ma.verdict.value == "supports")
+        total_assessments = len(claim.model_assessments)
+        consensus_score = support_count / total_assessments
+    
+    return ClaimResponse(
+        claim=claim,
+        consensus_score=consensus_score,
+        provenance_verified=len(claim.evidence) > 0,
+        replay_bundle_url=f"/replay/{claim_id}.jsonl"
+    )
+
+
+@app.post("/claims/{claim_id}/evidence:statcan")
+async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
+    """Add Statistics Canada evidence to a claim"""
+    claim = get_claim_by_id(claim_id)
+    
+    # Import here to avoid circular imports
+    from .statcan.fetch_csi import fetch_crime_severity_data
+    
+    try:
+        evidence_list = await fetch_crime_severity_data()
+        claim.evidence.extend(evidence_list)
+        claim.updated_at = datetime.utcnow()
+        
+        return {"status": "success", "evidence_count": len(evidence_list)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch StatCan data: {str(e)}")
+
+
+@app.post("/claims/{claim_id}/panel/run")
+async def run_model_panel(claim_id: str, request: PanelRequest):
+    """Run multi-model evaluation panel"""
+    claim = get_claim_by_id(claim_id)
+    
+    # Import here to avoid circular imports
+    from .panel.run_panel import run_panel_evaluation
+    
+    try:
+        assessments = await run_panel_evaluation(claim, request.models or ["gpt-4", "claude-3"])
+        claim.model_assessments.extend(assessments)
+        claim.updated_at = datetime.utcnow()
+        
+        return {
+            "status": "success",
+            "assessments": assessments,
+            "consensus_score": sum(1 for a in assessments if a.verdict.value == "supports") / len(assessments) if assessments else 0
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Panel evaluation failed: {str(e)}")
+
+
+@app.post("/consensus/{topic}/statements")
+async def create_consensus_statement(topic: str, request: ConsensusStatementRequest):
+    """Create a new consensus statement"""
+    statement = ConsensusStatement(
+        text=request.text,
+        topic=topic,
+        evidence_links=request.evidence_links
+    )
+    
+    if topic not in statements_db:
+        statements_db[topic] = []
+    
+    statements_db[topic].append(statement)
+    
+    return statement
+
+
+@app.post("/consensus/{topic}/votes")
+async def vote_on_statement(topic: str, request: ConsensusVoteRequest):
+    """Vote on a consensus statement"""
+    # Check if statement exists
+    topic_statements = statements_db.get(topic, [])
+    statement = None
+    for s in topic_statements:
+        if s.id == request.statement_id:
+            statement = s
+            break
+    
+    if not statement:
+        raise HTTPException(status_code=404, detail="Statement not found")
+    
+    # Create vote
+    vote = Vote(
+        statement_id=request.statement_id,
+        user_id=request.user_id,
+        session_id=request.session_id,
+        vote=request.vote
+    )
+    
+    votes_db.append(vote)
+    
+    # Update statement counts
+    statement_votes = [v for v in votes_db if v.statement_id == statement.id]
+    statement.agree_count = sum(1 for v in statement_votes if v.vote == VoteType.AGREE)
+    statement.disagree_count = sum(1 for v in statement_votes if v.vote == VoteType.DISAGREE)
+    statement.pass_count = sum(1 for v in statement_votes if v.vote == VoteType.PASS)
+    
+    total_votes = statement.agree_count + statement.disagree_count
+    statement.agree_rate = statement.agree_count / total_votes if total_votes > 0 else 0.0
+    
+    return {"status": "success", "vote": vote}
+
+
+@app.get("/consensus/{topic}/summary", response_model=ConsensusSummary)
+async def get_consensus_summary(topic: str):
+    """Get consensus summary for a topic"""
+    topic_statements = statements_db.get(topic, [])
+    
+    if not topic_statements:
+        return ConsensusSummary(
+            topic=topic,
+            statement_count=0,
+            vote_count=0,
+            overall_consensus=[],
+            divisive=[]
+        )
+    
+    # Sort by agreement rate
+    consensus_statements = sorted(
+        [s for s in topic_statements if s.agree_rate >= 0.7],
+        key=lambda x: x.agree_rate,
+        reverse=True
+    )
+    
+    divisive_statements = sorted(
+        [s for s in topic_statements if 0.3 <= s.agree_rate <= 0.7],
+        key=lambda x: abs(0.5 - x.agree_rate),
+        reverse=True
+    )
+    
+    total_votes = len([v for v in votes_db if any(s.id == v.statement_id for s in topic_statements)])
+    
+    return ConsensusSummary(
+        topic=topic,
+        statement_count=len(topic_statements),
+        vote_count=total_votes,
+        overall_consensus=consensus_statements[:5],
+        divisive=divisive_statements[:5]
+    )
+
+
+@app.get("/replay/{claim_id}.jsonl")
+async def get_replay_bundle(claim_id: str):
+    """Get replay bundle for reproducibility"""
+    claim = get_claim_by_id(claim_id)
+    
+    # Create replay bundle
+    from .replay.bundle import create_replay_bundle
+    
+    try:
+        bundle = await create_replay_bundle(claim)
+        return JSONResponse(
+            content=bundle.dict(),
+            headers={"Content-Type": "application/json"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create replay bundle: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  adjudicator:
+    build:
+      context: ./apps/adjudicator
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - STATCAN_WDS_BASE=https://www150.statcan.gc.ca/t1/wds/rest
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - VC_ISSUER_DID=${VC_ISSUER_DID:-did:key:example}
+      - VC_PRIVATE_KEY_BASE58=${VC_PRIVATE_KEY_BASE58:-}
+    volumes:
+      - ./data:/app/data
+      - ./apps/adjudicator:/app
+    working_dir: /app
+    command: uvicorn truce_adjudicator.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - ADJUDICATOR_API_URL=http://adjudicator:8000
+      - NODE_ENV=development
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    working_dir: /app
+    command: npm run dev
+    depends_on:
+      - adjudicator
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  fuseki:
+    image: secoresearch/fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      - ADMIN_PASSWORD=admin123
+      - FUSEKI_DATASET_1=truce
+    volumes:
+      - fuseki_data:/fuseki/databases
+    profiles:
+      - "optional"
+
+volumes:
+  fuseki_data:
+
+networks:
+  default:
+    name: truce-network

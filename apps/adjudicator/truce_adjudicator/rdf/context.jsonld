@@ -1,0 +1,84 @@
+{
+  "@context": {
+    "tr": "https://truce.dev/vocab#",
+    "schema": "http://schema.org/",
+    "wd": "http://www.wikidata.org/entity/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    
+    "Claim": "tr:Claim",
+    "Evidence": "tr:Evidence", 
+    "ModelAssessment": "tr:ModelAssessment",
+    "HumanReview": "tr:HumanReview",
+    "ConsensusStatement": "tr:ConsensusStatement",
+    "Vote": "tr:Vote",
+    "ReplayBundle": "tr:ReplayBundle",
+    
+    "text": "tr:text",
+    "entities": {
+      "@id": "tr:entities",
+      "@type": "@id"
+    },
+    "topic": "tr:topic",
+    "createdAt": {
+      "@id": "tr:createdAt",
+      "@type": "xsd:dateTime"
+    },
+    "updatedAt": {
+      "@id": "tr:updatedAt", 
+      "@type": "xsd:dateTime"
+    },
+    "publisher": "tr:publisher",
+    "publishedAt": {
+      "@id": "tr:publishedAt",
+      "@type": "xsd:dateTime"
+    },
+    "snippet": "tr:snippet",
+    "provenance": "tr:provenance",
+    "modelName": "tr:modelName",
+    "verdict": "tr:verdict",
+    "confidence": {
+      "@id": "tr:confidence",
+      "@type": "xsd:decimal"
+    },
+    "citations": {
+      "@id": "tr:citations",
+      "@type": "@id"
+    },
+    "rationale": "tr:rationale",
+    "notes": "tr:notes",
+    "signatureVC": "tr:signatureVC",
+    "agreeCount": {
+      "@id": "tr:agreeCount",
+      "@type": "xsd:nonNegativeInteger"
+    },
+    "disagreeCount": {
+      "@id": "tr:disagreeCount", 
+      "@type": "xsd:nonNegativeInteger"
+    },
+    "passCount": {
+      "@id": "tr:passCount",
+      "@type": "xsd:nonNegativeInteger"
+    },
+    "agreeRate": {
+      "@id": "tr:agreeRate",
+      "@type": "xsd:decimal"
+    },
+    "clusterId": {
+      "@id": "tr:clusterId",
+      "@type": "xsd:integer"
+    },
+    "evidenceLinks": {
+      "@id": "tr:evidenceLinks",
+      "@type": "@id"
+    },
+    "voteType": "tr:voteType",
+    
+    "url": "schema:url",
+    "author": "schema:author",
+    "name": "schema:name",
+    "description": "schema:description",
+    "label": "rdfs:label",
+    "comment": "rdfs:comment"
+  }
+}
