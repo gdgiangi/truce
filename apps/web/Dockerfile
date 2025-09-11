@@ -4,13 +4,10 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
-
-# Add missing dependency for build
-RUN npm install tailwindcss-animate
 
 # Build the application
 RUN npm run build

@@ -1,3 +1,4 @@
+import React from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -225,7 +226,7 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
                       <div>
                         <h4 className="font-medium">{assessment.model_name}</h4>
                         <div className="flex items-center gap-2 mt-1">
-                          <Badge variant={getVerdictColor(assessment.verdict)}>
+                          <Badge variant={getVerdictColor(assessment.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
                             {assessment.verdict}
                           </Badge>
                           <span className="text-sm text-muted-foreground">
@@ -274,7 +275,7 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
                       </div>
                     </div>
                   )}
-                </div>
+                </CardContent>
               </Card>
             )}
 

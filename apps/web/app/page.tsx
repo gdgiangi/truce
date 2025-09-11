@@ -1,3 +1,4 @@
+import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,6 +198,7 @@ export default function Home() {
               </div>
               <h3 className="text-lg font-medium mb-4 text-foreground">Consensus</h3>
               <p className="text-muted-foreground leading-relaxed">Surface areas of agreement, not just points of disagreement</p>
+            </div>
             </div>
           </div>
         </div>

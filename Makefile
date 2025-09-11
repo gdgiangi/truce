@@ -22,7 +22,7 @@ down: ## Stop all services
 
 seed: ## Seed demo data for Canadian violent crime claim
 	@echo "🌱 Seeding Canadian violent crime demo..."
-	cd apps/adjudicator && python -m truce_adjudicator.scripts.seed
+	docker-compose exec adjudicator python -m truce_adjudicator.scripts.seed
 	@echo "✅ Demo data loaded!"
 	@echo "   Claim Card: http://localhost:3000/claim/violent-crime-canada"
 	@echo "   Consensus Board: http://localhost:3000/consensus/canada-crime"
@@ -56,8 +56,8 @@ logs-api: ## Show adjudicator API logs
 	docker-compose logs -f adjudicator
 
 test: ## Run tests
-	cd apps/adjudicator && python -m pytest tests/
-	cd apps/web && npm test
+	docker-compose exec adjudicator python -m pytest tests/
+	docker-compose exec web npm test
 
 clean: ## Clean up Docker resources
 	docker-compose down -v

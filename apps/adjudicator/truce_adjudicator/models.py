@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 
 class VerdictType(str, Enum):
@@ -99,10 +99,11 @@ class Vote(BaseModel):
     vote: VoteType
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    @validator('user_id', 'session_id')
-    def validate_identity(cls, v, values, field):
+    @field_validator('user_id', 'session_id', mode='after')
+    @classmethod
+    def validate_identity(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
         """Ensure either user_id or session_id is provided"""
-        if field.name == 'session_id' and v is None and values.get('user_id') is None:
+        if info.field_name == 'session_id' and v is None and info.data.get('user_id') is None:
             raise ValueError('Either user_id or session_id must be provided')
         return v
 
