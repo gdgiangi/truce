@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Shield, Eye, Download } from "lucide-react";
+import { ProviderLogo } from "@/components/provider-logo";
 
 export default function TransparencyPage() {
   return (
@@ -72,11 +73,25 @@ export default function TransparencyPage() {
                   <h4 className="font-medium">Current Models</h4>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">GPT-4</span>
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo 
+                          src="https://www.svgrepo.com/show/306500/openai.svg" 
+                          alt="OpenAI logo"
+                          className="w-4 h-4 object-contain"
+                        />
+                        <span className="text-sm">GPT-4</span>
+                      </div>
                       <Badge variant="outline">OpenAI</Badge>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">Claude-3 Sonnet</span>
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo 
+                          src="https://registry.npmmirror.com/@lobehub/icons-static-png/1.64.0/files/light/anthropic.png" 
+                          alt="Anthropic logo"
+                          className="w-4 h-4 object-contain"
+                        />
+                        <span className="text-sm">Claude-3 Sonnet</span>
+                      </div>
                       <Badge variant="outline">Anthropic</Badge>
                     </div>
                   </div>

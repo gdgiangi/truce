@@ -8,9 +8,12 @@ from datetime import datetime
 import openai
 import anthropic
 import httpx
+from dotenv import load_dotenv
 
 from ..models import Claim, ModelAssessment, VerdictType
 
+# Load environment variables
+load_dotenv()
 
 # API clients
 openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -104,29 +107,64 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
     """Evaluate claim using OpenAI models"""
     
     try:
-        response = await openai_client.chat.completions.create(
-            model=model_name,
-            messages=[
+        # Handle different parameter requirements for different models
+        request_params = {
+            "model": model_name,
+            "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": evidence_context}
-            ],
-            temperature=0.1,
-            max_tokens=1000
-        )
+            ]
+        }
         
-        response_text = response.choices[0].message.content.strip()
+        # GPT-5 has different parameter requirements
+        if model_name.startswith("gpt-5"):
+            request_params["max_completion_tokens"] = 1000
+            # GPT-5 only supports default temperature (1)
+        else:
+            request_params["max_tokens"] = 1000
+            request_params["temperature"] = 0.1
         
-        # Parse JSON response
+        response = await openai_client.chat.completions.create(**request_params)
+        
+        response_text = response.choices[0].message.content
+        if response_text is None:
+            raise ValueError("OpenAI returned empty response")
+        response_text = response_text.strip()
+        
+        # Parse JSON response with improved handling
+        result = None
         try:
             result = json.loads(response_text)
         except json.JSONDecodeError:
-            # Try to extract JSON from response if it's wrapped in other text
+            # Try multiple extraction methods for different response formats
             import re
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            
+            # Method 1: Look for JSON block
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
             if json_match:
-                result = json.loads(json_match.group())
-            else:
-                raise ValueError("Could not parse JSON response")
+                try:
+                    result = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+            
+            # Method 2: Look for structured content and construct JSON
+            if not result:
+                verdict_match = re.search(r'"?verdict"?\s*:?\s*"?(supports|refutes|mixed|uncertain)"?', response_text, re.IGNORECASE)
+                confidence_match = re.search(r'"?confidence"?\s*:?\s*([0-9.]+)', response_text, re.IGNORECASE)
+                rationale_match = re.search(r'"?rationale"?\s*:?\s*"([^"]+)"', response_text, re.DOTALL)
+                
+                if verdict_match:
+                    result = {
+                        "verdict": verdict_match.group(1).lower(),
+                        "confidence": float(confidence_match.group(1)) if confidence_match else 0.5,
+                        "citations": [],  # Will be populated below
+                        "rationale": rationale_match.group(1) if rationale_match else f"GPT-5 assessment: {response_text[:500]}..."
+                    }
+                else:
+                    raise ValueError(f"Could not parse JSON response: {response_text[:200]}...")
+            
+            if not result:
+                raise ValueError(f"Could not parse JSON response: {response_text[:200]}...")
         
         # Convert citation strings to UUIDs
         citation_ids = []
@@ -160,7 +198,13 @@ async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_conte
         model_mapping = {
             "claude-3": "claude-3-sonnet-20240229",
             "claude-3-sonnet": "claude-3-sonnet-20240229",
-            "claude-3-haiku": "claude-3-haiku-20240307"
+            "claude-3-haiku": "claude-3-haiku-20240307",
+            "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku": "claude-3-5-haiku-20241022",
+            "claude-sonnet-4": "claude-sonnet-4-20250514",
+            "claude-opus-4": "claude-opus-4-20250514",
+            "claude-opus-4-1": "claude-opus-4-1-20250805",
+            "claude-3-7-sonnet": "claude-3-7-sonnet-20250219"
         }
         
         api_model_name = model_mapping.get(model_name, model_name)
@@ -175,7 +219,21 @@ async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_conte
             ]
         )
         
-        response_text = response.content[0].text.strip()
+        # Handle different response content types - use getattr to avoid type issues
+        response_text = ""
+        for content_block in response.content:
+            # Use getattr to safely access text attribute
+            text = getattr(content_block, 'text', None)
+            if text:
+                response_text += text
+        
+        response_text = response_text.strip()
+        if not response_text and response.content:
+            # Fallback to string representation of first content block
+            response_text = str(response.content[0])
+        
+        if not response_text:
+            raise ValueError("No text content found in Anthropic response")
         
         # Parse JSON response
         try:
@@ -214,17 +272,19 @@ async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_conte
 
 
 async def get_default_models() -> List[str]:
-    """Get list of default models to use for evaluation"""
+    """Get list of default models to use for evaluation - best from each provider"""
     models = []
     
+    # OpenAI - Use GPT-5 (the most advanced model)
     if os.getenv("OPENAI_API_KEY"):
-        models.append("gpt-4")
+        models.append("gpt-5")  # Latest and most capable OpenAI model
     
+    # Anthropic - Use the best Claude model
     if os.getenv("ANTHROPIC_API_KEY"):
-        models.append("claude-3-sonnet")
+        models.append("claude-sonnet-4-20250514")  # Best Claude model
     
     if not models:
-        # Mock models for demo purposes
+        # Mock models for demo purposes when no API keys available
         models = ["gpt-4-demo", "claude-3-demo"]
     
     return models

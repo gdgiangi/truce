@@ -6,6 +6,7 @@ import sys
 import os
 import httpx
 import json
+import random
 from pathlib import Path
 
 # Add project root to path
@@ -75,7 +76,7 @@ async def seed_canadian_crime_claim():
                 print("🤖 Creating model assessments...")
                 panel_response = await client.post(
                     f"{API_BASE}/claims/{slug}/panel/run",
-                    json={"models": ["gpt-4", "claude-3"]}
+                    json={"models": ["gpt-5", "claude-sonnet-4-20250514"]}
                 )
                 if panel_response.status_code == 200:
                     panel_result = panel_response.json()
@@ -115,7 +116,7 @@ async def seed_consensus_statements():
         "Transparency in crime data helps inform public understanding"
     ]
     
-    created_count = 0
+    created_statements = []
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -131,16 +132,124 @@ async def seed_consensus_statements():
                 )
                 
                 if response.status_code == 200:
-                    created_count += 1
+                    statement_response = response.json()
+                    created_statements.append(statement_response)
                 else:
                     print(f"⚠️  Failed to create statement: {statement_text[:50]}...")
                     
         except Exception as e:
             print(f"❌ Failed to create consensus statements: {e}")
+            return []
+    
+    print(f"✅ Created {len(created_statements)} consensus statements for topic: {topic}")
+    return created_statements
+
+
+async def simulate_votes_on_statements(statements):
+    """Simulate diverse voting patterns to demonstrate clustering"""
+    
+    print("🗳️  Simulating diverse votes...")
+    
+    topic = "canada-crime"
+    
+    # Define different user personas with distinct voting patterns
+    user_personas = {
+        # Evidence-focused users (tend to agree with factual statements)
+        "evidence_focused": {
+            "users": ["analyst_001", "researcher_002", "stats_003", "academic_004"],
+            "voting_patterns": {
+                # More likely to agree with evidence-based statements
+                "decreased by approximately 1%": {"agree": 0.8, "disagree": 0.1, "pass": 0.1},
+                "increased cumulatively": {"agree": 0.8, "disagree": 0.1, "pass": 0.1},
+                "police-reported incidents": {"agree": 0.9, "disagree": 0.0, "pass": 0.1},
+                "reporting limitations": {"agree": 0.9, "disagree": 0.0, "pass": 0.1},
+                "Evidence-based approaches": {"agree": 0.9, "disagree": 0.0, "pass": 0.1},
+            }
+        },
+        
+        # Policy-focused users (focus on solutions)
+        "policy_focused": {
+            "users": ["policy_001", "advocate_002", "planner_003", "official_004"],
+            "voting_patterns": {
+                "crime prevention": {"agree": 0.9, "disagree": 0.0, "pass": 0.1},
+                "victim support": {"agree": 0.9, "disagree": 0.0, "pass": 0.1},
+                "Social and economic factors": {"agree": 0.8, "disagree": 0.1, "pass": 0.1},
+                "Community safety": {"agree": 0.8, "disagree": 0.1, "pass": 0.1},
+                "Evidence-based approaches": {"agree": 0.7, "disagree": 0.1, "pass": 0.2},
+            }
+        },
+        
+        # Skeptical users (more critical of claims)
+        "skeptical": {
+            "users": ["critic_001", "skeptic_002", "analyst_003"],
+            "voting_patterns": {
+                "Different provinces": {"agree": 0.8, "disagree": 0.1, "pass": 0.1},
+                "reporting limitations": {"agree": 0.7, "disagree": 0.2, "pass": 0.1},
+                "may not capture all crimes": {"agree": 0.8, "disagree": 0.1, "pass": 0.1},
+                "decreased by approximately 1%": {"agree": 0.4, "disagree": 0.4, "pass": 0.2},
+                "increased cumulatively": {"agree": 0.4, "disagree": 0.4, "pass": 0.2},
+            }
+        }
+    }
+    
+    votes_created = 0
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            for statement in statements:
+                statement_text = statement.get("text", "")
+                statement_id = statement.get("id")
+                
+                if not statement_id:
+                    continue
+                
+                # Generate votes from each persona
+                for persona_name, persona_data in user_personas.items():
+                    for user_id in persona_data["users"]:
+                        
+                        # Find matching voting pattern for this statement
+                        vote_probs = None
+                        for pattern_key, probs in persona_data["voting_patterns"].items():
+                            if pattern_key.lower() in statement_text.lower():
+                                vote_probs = probs
+                                break
+                        
+                        # If no specific pattern, use default neutral pattern
+                        if not vote_probs:
+                            vote_probs = {"agree": 0.4, "disagree": 0.3, "pass": 0.3}
+                        
+                        # Randomly determine vote based on probabilities
+                        rand = random.random()
+                        if rand < vote_probs["agree"]:
+                            vote_type = "agree"
+                        elif rand < vote_probs["agree"] + vote_probs["disagree"]:
+                            vote_type = "disagree"
+                        else:
+                            vote_type = "pass"
+                        
+                        # Submit vote
+                        vote_data = {
+                            "statement_id": statement_id,
+                            "vote": vote_type,
+                            "user_id": user_id
+                        }
+                        
+                        response = await client.post(
+                            f"{API_BASE}/consensus/{topic}/votes",
+                            json=vote_data
+                        )
+                        
+                        if response.status_code == 200:
+                            votes_created += 1
+                        else:
+                            print(f"⚠️  Failed to create vote for {user_id}: {response.text}")
+                            
+        except Exception as e:
+            print(f"❌ Failed to create votes: {e}")
             return 0
     
-    print(f"✅ Created {created_count} consensus statements for topic: {topic}")
-    return created_count
+    print(f"✅ Created {votes_created} simulated votes from {sum(len(p['users']) for p in user_personas.values())} users")
+    return votes_created
 
 
 async def main():
@@ -172,7 +281,14 @@ async def main():
     print()
     
     # Seed consensus statements  
-    statement_count = await seed_consensus_statements()
+    statements = await seed_consensus_statements()
+    
+    print()
+    
+    # Simulate votes on the statements
+    if statements:
+        votes_count = await simulate_votes_on_statements(statements)
+        print(f"📊 Generated {votes_count} votes to demonstrate clustering")
     
     print()
     print("🎉 Seeding completed successfully!")
@@ -181,6 +297,7 @@ async def main():
     print(f"  Claim Card: http://localhost:3000/claim/violent-crime-in-canada-is-rising")
     print(f"  Consensus Board: http://localhost:3000/consensus/canada-crime")
     print(f"  API: http://localhost:8000/claims/violent-crime-in-canada-is-rising")
+    print(f"  Consensus Summary: http://localhost:8000/consensus/canada-crime/summary")
 
 
 if __name__ == "__main__":

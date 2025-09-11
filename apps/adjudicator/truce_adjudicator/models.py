@@ -124,6 +124,7 @@ class ConsensusSummary(BaseModel):
     vote_count: int
     overall_consensus: List[ConsensusStatement] = Field(..., description="High agreement statements")
     divisive: List[ConsensusStatement] = Field(..., description="High disagreement statements")
+    unvoted: List[ConsensusStatement] = Field(default_factory=list, description="Statements with insufficient votes")
     clusters: List[ConsensusCluster] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

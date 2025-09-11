@@ -13,7 +13,7 @@ make demo
 ```
 
 Visit:
-- **Claim Card**: http://localhost:3000/claim/violent-crime-canada
+- **Claim Card**: http://localhost:3000/claim/violent-crime-in-canada-is-rising
 - **Consensus Board**: http://localhost:3000/consensus/canada-crime  
 - **API**: http://localhost:8000
 

@@ -26,6 +26,7 @@ interface ConsensusSummary {
   vote_count: number;
   overall_consensus: ConsensusStatement[];
   divisive: ConsensusStatement[];
+  unvoted: ConsensusStatement[];
   clusters: Array<{
     id: number;
     statements: string[];
@@ -45,11 +46,26 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
   const [userVotes, setUserVotes] = useState<UserVotes>({});
   const [sessionId] = useState(() => Math.random().toString(36).substring(7));
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"consensus" | "divisive" | "clusters">("consensus");
+  const [activeTab, setActiveTab] = useState<"consensus" | "divisive" | "unvoted" | "clusters">("consensus");
 
   useEffect(() => {
     loadConsensusSummary();
   }, [params.topic]);
+
+  useEffect(() => {
+    // Auto-select the tab with the most content
+    if (summary) {
+      if (summary.unvoted.length > 0 && summary.overall_consensus.length === 0 && summary.divisive.length === 0) {
+        setActiveTab("unvoted");
+      } else if (summary.overall_consensus.length > 0) {
+        setActiveTab("consensus");
+      } else if (summary.divisive.length > 0) {
+        setActiveTab("divisive");
+      } else if (summary.clusters.length > 0) {
+        setActiveTab("clusters");
+      }
+    }
+  }, [summary]);
 
   const loadConsensusSummary = async () => {
     try {
@@ -227,6 +243,17 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
               Divisive ({summary.divisive.length})
             </button>
             <button
+              onClick={() => setActiveTab("unvoted")}
+              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "unvoted" 
+                  ? "bg-background text-foreground shadow-sm" 
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 inline mr-2" />
+              New ({summary.unvoted.length})
+            </button>
+            <button
               onClick={() => setActiveTab("clusters")}
               className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                 activeTab === "clusters" 
@@ -289,6 +316,33 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
                     <h3 className="text-lg font-medium mb-2">No Divisive Statements Yet</h3>
                     <p className="text-muted-foreground">
                       As more people vote, divisive statements will appear here.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {activeTab === "unvoted" && (
+            <div>
+              {summary.unvoted.length > 0 ? (
+                <>
+                  <h2 className="text-xl font-semibold mb-4 text-blue-700">
+                    New Statements
+                  </h2>
+                  <p className="text-muted-foreground mb-6 text-sm">
+                    Recently added statements that need your votes to determine consensus.
+                  </p>
+                  {summary.unvoted.map(statement => (
+                    <StatementCard key={statement.id} statement={statement} />
+                  ))}
+                </>
+              ) : (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <h3 className="text-lg font-medium mb-2">No New Statements</h3>
+                    <p className="text-muted-foreground">
+                      All statements have received enough votes for categorization.
                     </p>
                   </CardContent>
                 </Card>

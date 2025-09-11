@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { ExternalLink, Download, Shield, AlertTriangle, BarChart3, Bot } from "lucide-react";
+import { ProviderLogo } from "@/components/provider-logo";
 
 interface Evidence {
   id: string;
@@ -65,13 +66,55 @@ async function getClaim(slug: string): Promise<ClaimResponse | null> {
 }
 
 function getVerdictColor(verdict: string): string {
-  switch (verdict) {
-    case 'supports': return 'supports';
-    case 'refutes': return 'refutes';
-    case 'mixed': return 'mixed';
-    case 'uncertain': return 'uncertain';
-    default: return 'secondary';
+  switch (verdict.toLowerCase()) {
+    case "supports": return "supports";
+    case "refutes": return "refutes";
+    case "mixed": return "mixed";
+    case "uncertain": return "uncertain";
+    default: return "secondary";
   }
+}
+
+function getProviderInfo(modelName: string): { name: string; logo: string } {
+  const name = modelName.toLowerCase();
+  
+  // OpenAI models
+  if (name.includes('gpt') || name.includes('openai') || name.startsWith('o1')) {
+    return {
+      name: 'OpenAI',
+      logo: 'https://www.svgrepo.com/show/306500/openai.svg'
+    };
+  }
+  
+  // Anthropic models
+  if (name.includes('claude') || name.includes('anthropic')) {
+    return {
+      name: 'Anthropic',
+      logo: 'https://registry.npmmirror.com/@lobehub/icons-static-png/1.64.0/files/light/anthropic.png'
+    };
+  }
+  
+  // Demo/Mock models
+  if (name.includes('demo')) {
+    if (name.includes('gpt') || name.includes('openai')) {
+      return {
+        name: 'OpenAI (Demo)',
+        logo: 'https://www.svgrepo.com/show/306500/openai.svg'
+      };
+    }
+    if (name.includes('claude') || name.includes('anthropic')) {
+      return {
+        name: 'Anthropic (Demo)',
+        logo: 'https://registry.npmmirror.com/@lobehub/icons-static-png/1.64.0/files/light/anthropic.png'
+      };
+    }
+  }
+  
+  // Default fallback for unknown models
+  return {
+    name: 'AI Model',
+    logo: ''
+  };
 }
 
 function VerdictDonut({ assessments }: { assessments: ModelAssessment[] }) {
@@ -222,35 +265,50 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {claim.model_assessments.map((assessment) => (
-                  <div key={assessment.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h4 className="font-medium">{assessment.model_name}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant={getVerdictColor(assessment.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
-                            {assessment.verdict}
-                          </Badge>
-                          <span className="text-sm text-muted-foreground">
-                            {Math.round(assessment.confidence * 100)}% confidence
-                          </span>
+                {claim.model_assessments.map((assessment) => {
+                  const providerInfo = getProviderInfo(assessment.model_name);
+                  
+                  return (
+                    <div key={assessment.id} className="border rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-start gap-3">
+                          {providerInfo.logo && (
+                            <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-gray-50 rounded-lg border">
+                              <ProviderLogo 
+                                src={providerInfo.logo} 
+                                alt={`${providerInfo.name} logo`}
+                                className="w-5 h-5 object-contain"
+                              />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-medium">{assessment.model_name}</h4>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge variant={getVerdictColor(assessment.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
+                                {assessment.verdict}
+                              </Badge>
+                              <span className="text-sm text-muted-foreground">
+                                {Math.round(assessment.confidence * 100)}% confidence
+                              </span>
+                            </div>
+                          </div>
                         </div>
+                        <Progress 
+                          value={assessment.confidence * 100} 
+                          className="w-20"
+                        />
                       </div>
-                      <Progress 
-                        value={assessment.confidence * 100} 
-                        className="w-20"
-                      />
+                      
+                      <p className="text-sm mb-3">{assessment.rationale}</p>
+                      
+                      {assessment.citations.length > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          Cites {assessment.citations.length} evidence source(s)
+                        </div>
+                      )}
                     </div>
-                    
-                    <p className="text-sm mb-3">{assessment.rationale}</p>
-                    
-                    {assessment.citations.length > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        Cites {assessment.citations.length} evidence source(s)
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           </div>

@@ -34,7 +34,7 @@ export default function RootLayout({
                   <a href="/" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
                     Home
                   </a>
-                  <a href="/claim/violent-crime-canada" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
+                  <a href="/claim/violent-crime-in-canada-is-rising" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
                     Demo
                   </a>
                   <a href="/consensus/canada-crime" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
@@ -60,7 +60,7 @@ export default function RootLayout({
                         <a href="/" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                           Home
                         </a>
-                        <a href="/claim/violent-crime-canada" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                        <a href="/claim/violent-crime-in-canada-is-rising" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                           Demo
                         </a>
                         <a href="/consensus/canada-crime" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">

@@ -129,7 +129,7 @@ async def run_model_panel(claim_id: str, request: PanelRequest):
     from .panel.run_panel import run_panel_evaluation
     
     try:
-        assessments = await run_panel_evaluation(claim, request.models or ["gpt-4", "claude-3"])
+        assessments = await run_panel_evaluation(claim, request.models or ["gpt-5", "claude-sonnet-4-20250514"])
         claim.model_assessments.extend(assessments)
         claim.updated_at = datetime.utcnow()
         
@@ -206,21 +206,31 @@ async def get_consensus_summary(topic: str):
             statement_count=0,
             vote_count=0,
             overall_consensus=[],
-            divisive=[]
+            divisive=[],
+            unvoted=[]
         )
     
-    # Sort by agreement rate
-    consensus_statements = sorted(
-        [s for s in topic_statements if s.agree_rate >= 0.7],
-        key=lambda x: x.agree_rate,
-        reverse=True
-    )
+    # Categorize statements based on vote counts and agreement rates
+    consensus_statements = []
+    divisive_statements = []
+    unvoted_statements = []
     
-    divisive_statements = sorted(
-        [s for s in topic_statements if 0.3 <= s.agree_rate <= 0.7],
-        key=lambda x: abs(0.5 - x.agree_rate),
-        reverse=True
-    )
+    for statement in topic_statements:
+        total_votes = statement.agree_count + statement.disagree_count
+        
+        if total_votes < 3:  # Insufficient votes for meaningful categorization
+            unvoted_statements.append(statement)
+        elif statement.agree_rate >= 0.7:  # High agreement
+            consensus_statements.append(statement)
+        elif 0.3 <= statement.agree_rate <= 0.7:  # Mixed/divisive
+            divisive_statements.append(statement)
+        else:  # Low agreement (also a form of consensus - disagreement)
+            consensus_statements.append(statement)
+    
+    # Sort each category
+    consensus_statements.sort(key=lambda x: x.agree_rate, reverse=True)
+    divisive_statements.sort(key=lambda x: abs(0.5 - x.agree_rate), reverse=True)
+    unvoted_statements.sort(key=lambda x: x.created_at, reverse=True)
     
     total_votes = len([v for v in votes_db if any(s.id == v.statement_id for s in topic_statements)])
     
@@ -229,7 +239,8 @@ async def get_consensus_summary(topic: str):
         statement_count=len(topic_statements),
         vote_count=total_votes,
         overall_consensus=consensus_statements[:5],
-        divisive=divisive_statements[:5]
+        divisive=divisive_statements[:5],
+        unvoted=unvoted_statements[:10]  # Show up to 10 unvoted statements
     )
 
 

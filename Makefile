@@ -24,7 +24,7 @@ seed: ## Seed demo data for Canadian violent crime claim
 	@echo "🌱 Seeding Canadian violent crime demo..."
 	docker-compose exec adjudicator python -m truce_adjudicator.scripts.seed
 	@echo "✅ Demo data loaded!"
-	@echo "   Claim Card: http://localhost:3000/claim/violent-crime-canada"
+	@echo "   Claim Card: http://localhost:3000/claim/violent-crime-in-canada-is-rising"
 	@echo "   Consensus Board: http://localhost:3000/consensus/canada-crime"
 
 panel: ## Run model panel evaluation on existing claims
@@ -74,7 +74,7 @@ format: ## Format code
 demo: build up seed ## Full demo setup (build + up + seed)
 	@echo ""
 	@echo "🎉 Truce demo is ready!"
-	@echo "   Claim Card: http://localhost:3000/claim/violent-crime-canada"  
+	@echo "   Claim Card: http://localhost:3000/claim/violent-crime-in-canada-is-rising"  
 	@echo "   Consensus Board: http://localhost:3000/consensus/canada-crime"
 	@echo "   API: http://localhost:8000"
 	@echo ""
