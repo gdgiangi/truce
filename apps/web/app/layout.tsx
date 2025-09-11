@@ -94,7 +94,7 @@ export default function RootLayout({
                 <div className="text-sm text-muted-foreground">
                   <p>
                     Open source on{" "}
-                    <a href="#" className="text-foreground hover:text-truce-600 transition-colors underline underline-offset-4">
+                    <a href="https://github.com/gdgiangi/truce" className="text-foreground hover:text-truce-600 transition-colors underline underline-offset-4">
                       GitHub
                     </a>
                   </p>

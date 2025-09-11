@@ -299,7 +299,7 @@ export default function TransparencyPage() {
         <div className="mt-12 pt-8 border-t text-center text-sm text-muted-foreground">
           <p>
             Last updated: {new Date().toLocaleDateString()} • 
-            <a href="https://github.com/truce-dev/truce" className="ml-1 underline hover:text-foreground">
+            <a href="https://github.com/gdgiangi/truce" className="ml-1 underline hover:text-foreground">
               View source code
             </a>
           </p>
