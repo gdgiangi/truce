@@ -107,26 +107,71 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
     """Evaluate claim using OpenAI models"""
     
     try:
-        # Handle different parameter requirements for different models
-        request_params = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": evidence_context}
-            ]
-        }
-        
-        # GPT-5 has different parameter requirements
+        # Handle GPT-5 differently - it uses the responses API
         if model_name.startswith("gpt-5"):
-            request_params["max_completion_tokens"] = 1000
-            # GPT-5 only supports default temperature (1)
+            # GPT-5 uses a different API endpoint and format
+            prompt = f"{SYSTEM_PROMPT}\n\n{evidence_context}"
+            
+            response = await openai_client.responses.create(
+                model=model_name,
+                input=prompt,
+                reasoning={"effort": "medium"},  # Can be "low", "medium", or "high"
+                text={"verbosity": "medium"}     # Can be "low", "medium", or "high"
+            )
+            
+            # GPT-5 returns a different response structure
+            # Try different ways to extract the text content
+            response_text = ""
+            try:
+                if hasattr(response, 'text'):
+                    if isinstance(response.text, str):
+                        response_text = response.text
+                    else:
+                        # Try common attribute names
+                        for attr_name in ['value', 'content', 'text', 'response']:
+                            try:
+                                response_text = getattr(response.text, attr_name, "")
+                                if response_text:
+                                    break
+                            except (AttributeError, TypeError):
+                                continue
+                
+                # If still no text, try the response object itself
+                if not response_text:
+                    for attr_name in ['text', 'content', 'response']:
+                        try:
+                            response_text = getattr(response, attr_name, "")
+                            if response_text and isinstance(response_text, str):
+                                break
+                        except (AttributeError, TypeError):
+                            continue
+            except Exception:
+                pass
+            
+            # Fallback to string representation if we can't find the content
+            if not response_text:
+                response_text = str(response)
+                # Try to extract JSON from the string representation
+                import re
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                if json_match:
+                    response_text = json_match.group()
+            
         else:
-            request_params["max_tokens"] = 1000
-            request_params["temperature"] = 0.1
+            # Standard GPT-4 and other models using chat completions
+            request_params = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": evidence_context}
+                ],
+                "max_tokens": 1000,
+                "temperature": 0.1
+            }
+            
+            response = await openai_client.chat.completions.create(**request_params)
+            response_text = response.choices[0].message.content
         
-        response = await openai_client.chat.completions.create(**request_params)
-        
-        response_text = response.choices[0].message.content
         if response_text is None:
             raise ValueError("OpenAI returned empty response")
         response_text = response_text.strip()
@@ -158,7 +203,7 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
                         "verdict": verdict_match.group(1).lower(),
                         "confidence": float(confidence_match.group(1)) if confidence_match else 0.5,
                         "citations": [],  # Will be populated below
-                        "rationale": rationale_match.group(1) if rationale_match else f"GPT-5 assessment: {response_text[:500]}..."
+                        "rationale": rationale_match.group(1) if rationale_match else f"{model_name} assessment: {response_text[:500]}..."
                     }
                 else:
                     raise ValueError(f"Could not parse JSON response: {response_text[:200]}...")

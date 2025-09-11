@@ -210,6 +210,9 @@ async def get_consensus_summary(topic: str):
             unvoted=[]
         )
     
+    # Get votes for this topic
+    topic_votes = [v for v in votes_db if any(s.id == v.statement_id for s in topic_statements)]
+    
     # Categorize statements based on vote counts and agreement rates
     consensus_statements = []
     divisive_statements = []
@@ -232,7 +235,17 @@ async def get_consensus_summary(topic: str):
     divisive_statements.sort(key=lambda x: abs(0.5 - x.agree_rate), reverse=True)
     unvoted_statements.sort(key=lambda x: x.created_at, reverse=True)
     
-    total_votes = len([v for v in votes_db if any(s.id == v.statement_id for s in topic_statements)])
+    # Generate opinion clusters using the clustering algorithm
+    clusters = []
+    if topic_votes and topic_statements:
+        from .consensus.vote import cluster_users_by_votes
+        try:
+            clusters = cluster_users_by_votes(topic_statements, topic_votes, n_clusters=3)
+        except Exception as e:
+            print(f"Clustering failed: {e}")
+            # Continue without clusters rather than failing entirely
+    
+    total_votes = len(topic_votes)
     
     return ConsensusSummary(
         topic=topic,
@@ -240,7 +253,8 @@ async def get_consensus_summary(topic: str):
         vote_count=total_votes,
         overall_consensus=consensus_statements[:5],
         divisive=divisive_statements[:5],
-        unvoted=unvoted_statements[:10]  # Show up to 10 unvoted statements
+        unvoted=unvoted_statements[:10],  # Show up to 10 unvoted statements
+        clusters=clusters
     )
 
 
