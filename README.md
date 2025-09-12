@@ -2,6 +2,8 @@
 
 A transparent system for de-escalating dialogue around contentious claims through evidence, multi-model evaluation, and consensus-building.
 
+<img width="3456" height="5088" alt="screencapture-localhost-3000-2025-09-11-09_28_39" src="https://github.com/user-attachments/assets/35427e32-d8d5-4f41-a1bc-9d6f74aff41d" />
+
 ## Quick Start
 
 ```bash
