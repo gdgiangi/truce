@@ -2,7 +2,7 @@
 
 A transparent system for de-escalating dialogue around contentious claims through evidence, multi-model evaluation, and consensus-building.
 
-<img width="1728" height="2544" alt="screencapture-localhost-3000-2025-09-11-09_28_39" src="https://github.com/user-attachments/assets/7f63ffb6-359e-45b2-967e-5699c57d206f" />
+<img width="1348" height="342" alt="screencapture-localhost-3000-2025-09-11-09_28_39" src="https://github.com/user-attachments/assets/2029bb1d-383e-4e33-9fdb-199a1bc609e6" />
 
 ## Quick Start
 
