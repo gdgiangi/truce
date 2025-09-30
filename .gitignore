@@ -101,6 +101,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 env.bak/
 venv.bak/
@@ -111,3 +112,15 @@ venv.bak/
 
 # Generated search index
 apps/adjudicator/truce_adjudicator/data/
+
+# Data files (CSV, ZIP, etc.)
+apps/data/
+data/
+*.csv
+*.zip
+*.xlsx
+
+# Virtual environments in MCP servers
+apps/adjudicator/mcp_servers/*/venv/
+apps/adjudicator/mcp_servers/*/.venv/
+apps/adjudicator/mcp_servers/*/env/
