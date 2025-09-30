@@ -36,7 +36,7 @@ def compute_sources_hash(evidence: Sequence[Evidence]) -> str:
         return "no-sources"
 
     digest = sha256()
-    for item in sorted(evidence, key=lambda ev: str(ev.id)):
+    for item in sorted(evidence, key=lambda ev: ev.id):
         published = item.published_at.isoformat() if item.published_at else ""
         record = "|".join(
             [
