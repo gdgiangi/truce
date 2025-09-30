@@ -112,9 +112,6 @@ async def _gather_and_persist_sources(
     gathered_sources = await explorer_agent.gather_sources(claim.text, window)
     if not gathered_sources:
         return []
-
-
-
     # Build deduplication sets from all existing evidence, not just those with snippets
     existing_urls = {
         evidence.normalized_url
