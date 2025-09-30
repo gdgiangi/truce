@@ -53,7 +53,16 @@ class Evidence(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     def model_post_init(self, _context: Any) -> None:
-        """Auto-compute normalized_url and content_hash if not provided."""
+        """
+        Pydantic v2 lifecycle hook called after model initialization.
+
+        This method automatically computes the `normalized_url` and `content_hash` fields
+        if they are not provided during instantiation. It is invoked after the model's
+        fields have been populated, allowing for post-processing or validation.
+
+        Args:
+            _context (Any): Context information provided by Pydantic (unused).
+        """
         if not self.normalized_url and self.url:
             from .mcp.explorer import normalize_url
 

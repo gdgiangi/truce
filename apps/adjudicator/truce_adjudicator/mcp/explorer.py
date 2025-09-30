@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from ..models import Evidence, TimeWindow
