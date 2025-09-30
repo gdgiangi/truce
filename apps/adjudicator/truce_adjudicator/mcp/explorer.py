@@ -220,7 +220,7 @@ def normalize_url(url: str) -> str:
     if not url:
         return ""
     parsed = urlparse(url)
-    netloc = parsed.hostname.lower() if parsed.hostname else ""
+    netloc = (parsed.hostname or "").lower()
     path = parsed.path.rstrip("/") or "/"
     query_pairs = sorted(parse_qsl(parsed.query))
     normalized_query = urlencode(query_pairs)
