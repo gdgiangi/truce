@@ -324,6 +324,9 @@ async def verify_claim(
         if new_evidence:
             claim.updated_at = datetime.utcnow()
     except Exception as e:
+        # Log the error but continue with existing evidence
+        print(f"Error gathering new evidence: {e}")
+        new_evidence = []
 
     # If new evidence was found, we need a fresh verification that includes it
     if new_evidence:
