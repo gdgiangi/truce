@@ -84,7 +84,7 @@ export function ClaimVerifier({ slug, adjudicatorUrl, defaultProviders }: ClaimV
       return;
     }
     runVerification(false);
-  }, [adjudicatorUrl, endDate, selectedProviders, slug, startDate]);
+  }, [adjudicatorUrl, endDate, selectedProviders, slug, startDate, runVerification]);
 
   const toggleProvider = (provider: string) => {
     setSelectedProviders((prev) => {

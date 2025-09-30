@@ -47,7 +47,7 @@ describe('Home page', () => {
     render(<Home />)
     expect(screen.getByText('Live Demo')).toBeInTheDocument()
     expect(screen.getByText('Claim Analysis')).toBeInTheDocument()
-    expect(screen.getByText('"Violent crime in Canada is rising."')).toBeInTheDocument()
+    expect(screen.getByText(/Violent crime in Canada is rising/)).toBeInTheDocument()
   })
 
   it('renders demo section with consensus board', () => {

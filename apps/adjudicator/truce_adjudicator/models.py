@@ -5,11 +5,12 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class VerdictType(str, Enum):
     """Model verdict types"""
+
     SUPPORTS = "supports"
     REFUTES = "refutes"
     MIXED = "mixed"
@@ -18,6 +19,7 @@ class VerdictType(str, Enum):
 
 class VoteType(str, Enum):
     """Vote types for consensus"""
+
     AGREE = "agree"  # +1
     DISAGREE = "disagree"  # -1
     PASS = "pass"  # 0
@@ -25,14 +27,18 @@ class VoteType(str, Enum):
 
 class ClaimCreate(BaseModel):
     """Request to create a new claim"""
+
     text: str = Field(..., min_length=10, max_length=500)
     topic: str = Field(..., min_length=3, max_length=100)
     entities: List[str] = Field(default_factory=list, description="Wikidata QIDs")
-    seed_sources: List[str] = Field(default_factory=list, description="Optional initial sources")
+    seed_sources: List[str] = Field(
+        default_factory=list, description="Optional initial sources"
+    )
 
 
 class Evidence(BaseModel):
     """Evidence supporting or refuting a claim"""
+
     id: UUID = Field(default_factory=uuid4)
     url: str
     publisher: str
@@ -50,10 +56,12 @@ class Evidence(BaseModel):
         """Auto-compute normalized_url and content_hash if not provided."""
         if not self.normalized_url and self.url:
             from .mcp.explorer import normalize_url
+
             self.normalized_url = normalize_url(self.url)
-        
+
         if not self.content_hash:
             from .mcp.explorer import compute_content_hash
+
             title = self.title or ""
             snippet = self.snippet or ""
             self.content_hash = compute_content_hash(title, snippet)
@@ -61,6 +69,7 @@ class Evidence(BaseModel):
 
 class ModelAssessment(BaseModel):
     """Assessment of a claim by an AI model"""
+
     id: UUID = Field(default_factory=uuid4)
     model_name: str
     verdict: VerdictType
@@ -72,6 +81,7 @@ class ModelAssessment(BaseModel):
 
 class HumanReview(BaseModel):
     """Human review of a claim"""
+
     id: UUID = Field(default_factory=uuid4)
     author: str
     verdict: VerdictType
@@ -82,6 +92,7 @@ class HumanReview(BaseModel):
 
 class Claim(BaseModel):
     """A claim to be evaluated"""
+
     id: UUID = Field(default_factory=uuid4)
     text: str
     entities: List[str] = Field(default_factory=list, description="Wikidata QIDs")
@@ -95,6 +106,7 @@ class Claim(BaseModel):
 
 class ConsensusStatement(BaseModel):
     """A statement for consensus building"""
+
     id: UUID = Field(default_factory=uuid4)
     text: str = Field(..., min_length=10, max_length=140)
     topic: str
@@ -109,6 +121,7 @@ class ConsensusStatement(BaseModel):
 
 class Vote(BaseModel):
     """A vote on a consensus statement"""
+
     id: UUID = Field(default_factory=uuid4)
     statement_id: UUID
     user_id: Optional[str] = None  # Authenticated user ID
@@ -116,17 +129,22 @@ class Vote(BaseModel):
     vote: VoteType
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    @field_validator('user_id', 'session_id', mode='after')
+    @field_validator("user_id", "session_id", mode="after")
     @classmethod
     def validate_identity(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
         """Ensure either user_id or session_id is provided"""
-        if info.field_name == 'session_id' and v is None and info.data.get('user_id') is None:
-            raise ValueError('Either user_id or session_id must be provided')
+        if (
+            info.field_name == "session_id"
+            and v is None
+            and info.data.get("user_id") is None
+        ):
+            raise ValueError("Either user_id or session_id must be provided")
         return v
 
 
 class ConsensusCluster(BaseModel):
     """A cluster of users with similar voting patterns"""
+
     id: int
     statements: List[UUID]
     user_count: int
@@ -136,24 +154,33 @@ class ConsensusCluster(BaseModel):
 
 class ConsensusSummary(BaseModel):
     """Summary of consensus for a topic"""
+
     topic: str
     statement_count: int
     vote_count: int
-    overall_consensus: List[ConsensusStatement] = Field(..., description="High agreement statements")
-    divisive: List[ConsensusStatement] = Field(..., description="High disagreement statements")
-    unvoted: List[ConsensusStatement] = Field(default_factory=list, description="Statements with insufficient votes")
+    overall_consensus: List[ConsensusStatement] = Field(
+        ..., description="High agreement statements"
+    )
+    divisive: List[ConsensusStatement] = Field(
+        ..., description="High disagreement statements"
+    )
+    unvoted: List[ConsensusStatement] = Field(
+        default_factory=list, description="Statements with insufficient votes"
+    )
     clusters: List[ConsensusCluster] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class TimeWindow(BaseModel):
     """Optional time window for evidence filtering."""
+
     start: Optional[datetime] = None
     end: Optional[datetime] = None
 
 
 class ClaimSearchHit(BaseModel):
     """Search hit for a claim."""
+
     slug: str
     text: str
     score: float
@@ -161,6 +188,7 @@ class ClaimSearchHit(BaseModel):
 
 class EvidenceSearchHit(BaseModel):
     """Search hit for evidence associated with a claim."""
+
     claim_slug: str
     evidence_id: UUID
     snippet: str
@@ -171,6 +199,7 @@ class EvidenceSearchHit(BaseModel):
 
 class SearchResponse(BaseModel):
     """Combined search response across claims and evidence."""
+
     query: str
     claims: List[ClaimSearchHit] = Field(default_factory=list)
     evidence: List[EvidenceSearchHit] = Field(default_factory=list)
@@ -178,6 +207,7 @@ class SearchResponse(BaseModel):
 
 class VerificationRecord(BaseModel):
     """Persistent record of a verification run."""
+
     id: UUID = Field(default_factory=uuid4)
     claim_slug: str
     verdict: VerdictType
@@ -190,6 +220,7 @@ class VerificationRecord(BaseModel):
 
 class VerificationResponse(BaseModel):
     """API response payload for verification requests."""
+
     verification_id: UUID
     cached: bool
     verdict: VerdictType
@@ -201,6 +232,7 @@ class VerificationResponse(BaseModel):
 
 class StatCanData(BaseModel):
     """Statistics Canada data response"""
+
     table_id: str
     title: str
     data: List[Dict[str, Any]]
@@ -211,6 +243,7 @@ class StatCanData(BaseModel):
 
 class ReplayBundle(BaseModel):
     """Reproducibility bundle for a claim evaluation"""
+
     id: UUID = Field(default_factory=uuid4)
     claim_id: UUID
     inputs: Dict[str, Any]
@@ -222,6 +255,7 @@ class ReplayBundle(BaseModel):
 
 class ClaimResponse(BaseModel):
     """API response for a claim"""
+
     claim: Claim
     slug: Optional[str] = None
     consensus_score: Optional[float] = None
@@ -232,18 +266,23 @@ class ClaimResponse(BaseModel):
 # API Request/Response models
 class EvidenceRequest(BaseModel):
     """Request to add evidence to a claim"""
+
     source_type: str = Field(..., description="e.g., 'statcan', 'manual'")
     params: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PanelRequest(BaseModel):
     """Request to run model panel evaluation"""
-    models: List[str] = Field(default_factory=list, description="Specific models to use")
+
+    models: List[str] = Field(
+        default_factory=list, description="Specific models to use"
+    )
     temperature: float = Field(default=0.1, ge=0.0, le=1.0)
 
 
 class ConsensusVoteRequest(BaseModel):
     """Request to vote on a consensus statement"""
+
     statement_id: UUID
     vote: VoteType
     session_id: Optional[str] = None
@@ -252,5 +291,6 @@ class ConsensusVoteRequest(BaseModel):
 
 class ConsensusStatementRequest(BaseModel):
     """Request to create a new consensus statement"""
+
     text: str = Field(..., min_length=10, max_length=140)
     evidence_links: List[UUID] = Field(default_factory=list)

@@ -8,7 +8,7 @@ from threading import Lock
 from typing import Dict, Iterable, List, Optional, Sequence
 from uuid import UUID
 
-from .models import Claim, Evidence, TimeWindow, VerificationRecord, VerdictType
+from .models import Claim, Evidence, TimeWindow, VerdictType, VerificationRecord
 
 DEFAULT_PROVIDERS: List[str] = [
     "gpt-5",
@@ -112,8 +112,16 @@ def _determine_verdict(claim: Claim) -> VerdictType:
     if not claim.model_assessments:
         return VerdictType.UNCERTAIN
 
-    support = sum(1 for assessment in claim.model_assessments if assessment.verdict == VerdictType.SUPPORTS)
-    refute = sum(1 for assessment in claim.model_assessments if assessment.verdict == VerdictType.REFUTES)
+    support = sum(
+        1
+        for assessment in claim.model_assessments
+        if assessment.verdict == VerdictType.SUPPORTS
+    )
+    refute = sum(
+        1
+        for assessment in claim.model_assessments
+        if assessment.verdict == VerdictType.REFUTES
+    )
 
     if support > refute:
         return VerdictType.SUPPORTS

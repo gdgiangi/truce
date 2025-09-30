@@ -2,12 +2,12 @@
 
 import json
 import os
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-import openai
 import anthropic
 import httpx
+import openai
 from dotenv import load_dotenv
 
 from ..models import Claim, ModelAssessment, VerdictType
@@ -49,47 +49,55 @@ Guidelines:
 Be thorough, objective, and transparent about limitations."""
 
 
-async def run_panel_evaluation(claim: Claim, models: List[str]) -> List[ModelAssessment]:
+async def run_panel_evaluation(
+    claim: Claim, models: List[str]
+) -> List[ModelAssessment]:
     """Run multi-model evaluation of a claim"""
-    
+
     if not claim.evidence:
         raise ValueError("Cannot run panel evaluation without evidence")
-    
+
     # Prepare evidence context for models
     evidence_context = _prepare_evidence_context(claim)
-    
+
     assessments = []
-    
+
     for model_name in models:
         try:
             if model_name.startswith("gpt"):
-                assessment = await _evaluate_with_openai(model_name, claim, evidence_context)
+                assessment = await _evaluate_with_openai(
+                    model_name, claim, evidence_context
+                )
             elif model_name.startswith("claude"):
-                assessment = await _evaluate_with_anthropic(model_name, claim, evidence_context)
+                assessment = await _evaluate_with_anthropic(
+                    model_name, claim, evidence_context
+                )
             else:
                 print(f"Unknown model: {model_name}, skipping")
                 continue
-                
+
             assessments.append(assessment)
-            
+
         except Exception as e:
             print(f"Error evaluating with {model_name}: {e}")
             # Create error assessment for transparency
-            assessments.append(ModelAssessment(
-                model_name=model_name,
-                verdict=VerdictType.UNCERTAIN,
-                confidence=0.0,
-                citations=[],
-                rationale=f"Evaluation failed due to error: {str(e)}"
-            ))
-    
+            assessments.append(
+                ModelAssessment(
+                    model_name=model_name,
+                    verdict=VerdictType.UNCERTAIN,
+                    confidence=0.0,
+                    citations=[],
+                    rationale=f"Evaluation failed due to error: {str(e)}",
+                )
+            )
+
     return assessments
 
 
 def _prepare_evidence_context(claim: Claim) -> str:
     """Prepare evidence context for model evaluation"""
     context = f"CLAIM: {claim.text}\n\nEVIDENCE:\n"
-    
+
     for i, evidence in enumerate(claim.evidence):
         context += f"\nEvidence {i+1} (ID: {evidence.id}):\n"
         context += f"Source: {evidence.url}\n"
@@ -97,48 +105,50 @@ def _prepare_evidence_context(claim: Claim) -> str:
         context += f"Published: {evidence.published_at}\n"
         context += f"Content: {evidence.snippet}\n"
         context += f"---\n"
-    
+
     context += f"\nPlease evaluate the claim '{claim.text}' based on this evidence."
-    
+
     return context
 
 
-async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context: str) -> ModelAssessment:
+async def _evaluate_with_openai(
+    model_name: str, claim: Claim, evidence_context: str
+) -> ModelAssessment:
     """Evaluate claim using OpenAI models"""
-    
+
     try:
         # Handle GPT-5 differently - it uses the responses API
         if model_name.startswith("gpt-5"):
             # GPT-5 uses a different API endpoint and format
             prompt = f"{SYSTEM_PROMPT}\n\n{evidence_context}"
-            
+
             response = await openai_client.responses.create(
                 model=model_name,
                 input=prompt,
                 reasoning={"effort": "medium"},  # Can be "low", "medium", or "high"
-                text={"verbosity": "medium"}     # Can be "low", "medium", or "high"
+                text={"verbosity": "medium"},  # Can be "low", "medium", or "high"
             )
-            
+
             # GPT-5 returns a different response structure
             # Try different ways to extract the text content
             response_text = ""
             try:
-                if hasattr(response, 'text'):
+                if hasattr(response, "text"):
                     if isinstance(response.text, str):
                         response_text = response.text
                     else:
                         # Try common attribute names
-                        for attr_name in ['value', 'content', 'text', 'response']:
+                        for attr_name in ["value", "content", "text", "response"]:
                             try:
                                 response_text = getattr(response.text, attr_name, "")
                                 if response_text:
                                     break
                             except (AttributeError, TypeError):
                                 continue
-                
+
                 # If still no text, try the response object itself
                 if not response_text:
-                    for attr_name in ['text', 'content', 'response']:
+                    for attr_name in ["text", "content", "response"]:
                         try:
                             response_text = getattr(response, attr_name, "")
                             if response_text and isinstance(response_text, str):
@@ -147,35 +157,36 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
                             continue
             except Exception:
                 pass
-            
+
             # Fallback to string representation if we can't find the content
             if not response_text:
                 response_text = str(response)
                 # Try to extract JSON from the string representation
                 import re
-                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+
+                json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
                 if json_match:
                     response_text = json_match.group()
-            
+
         else:
             # Standard GPT-5 and other models using chat completions
             request_params = {
                 "model": model_name,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": evidence_context}
+                    {"role": "user", "content": evidence_context},
                 ],
                 "max_tokens": 1000,
-                "temperature": 0.1
+                "temperature": 0.1,
             }
-            
+
             response = await openai_client.chat.completions.create(**request_params)
             response_text = response.choices[0].message.content
-        
+
         if response_text is None:
             raise ValueError("OpenAI returned empty response")
         response_text = response_text.strip()
-        
+
         # Parse JSON response with improved handling
         result = None
         try:
@@ -183,34 +194,56 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
         except json.JSONDecodeError:
             # Try multiple extraction methods for different response formats
             import re
-            
+
             # Method 1: Look for JSON block
-            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
+            json_match = re.search(
+                r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", response_text, re.DOTALL
+            )
             if json_match:
                 try:
                     result = json.loads(json_match.group())
                 except json.JSONDecodeError:
                     pass
-            
+
             # Method 2: Look for structured content and construct JSON
             if not result:
-                verdict_match = re.search(r'"?verdict"?\s*:?\s*"?(supports|refutes|mixed|uncertain)"?', response_text, re.IGNORECASE)
-                confidence_match = re.search(r'"?confidence"?\s*:?\s*([0-9.]+)', response_text, re.IGNORECASE)
-                rationale_match = re.search(r'"?rationale"?\s*:?\s*"([^"]+)"', response_text, re.DOTALL)
-                
+                verdict_match = re.search(
+                    r'"?verdict"?\s*:?\s*"?(supports|refutes|mixed|uncertain)"?',
+                    response_text,
+                    re.IGNORECASE,
+                )
+                confidence_match = re.search(
+                    r'"?confidence"?\s*:?\s*([0-9.]+)', response_text, re.IGNORECASE
+                )
+                rationale_match = re.search(
+                    r'"?rationale"?\s*:?\s*"([^"]+)"', response_text, re.DOTALL
+                )
+
                 if verdict_match:
                     result = {
                         "verdict": verdict_match.group(1).lower(),
-                        "confidence": float(confidence_match.group(1)) if confidence_match else 0.5,
+                        "confidence": (
+                            float(confidence_match.group(1))
+                            if confidence_match
+                            else 0.5
+                        ),
                         "citations": [],  # Will be populated below
-                        "rationale": rationale_match.group(1) if rationale_match else f"{model_name} assessment: {response_text[:500]}..."
+                        "rationale": (
+                            rationale_match.group(1)
+                            if rationale_match
+                            else f"{model_name} assessment: {response_text[:500]}..."
+                        ),
                     }
                 else:
-                    raise ValueError(f"Could not parse JSON response: {response_text[:200]}...")
-            
+                    raise ValueError(
+                        f"Could not parse JSON response: {response_text[:200]}..."
+                    )
+
             if not result:
-                raise ValueError(f"Could not parse JSON response: {response_text[:200]}...")
-        
+                raise ValueError(
+                    f"Could not parse JSON response: {response_text[:200]}..."
+                )
+
         # Convert citation strings to UUIDs
         citation_ids = []
         for citation in result.get("citations", []):
@@ -220,24 +253,26 @@ async def _evaluate_with_openai(model_name: str, claim: Claim, evidence_context:
                     if str(evidence.id) == citation or citation in str(evidence.id):
                         citation_ids.append(evidence.id)
                         break
-        
+
         assessment = ModelAssessment(
             model_name=model_name,
             verdict=VerdictType(result["verdict"]),
             confidence=float(result["confidence"]),
             citations=citation_ids,
-            rationale=result["rationale"]
+            rationale=result["rationale"],
         )
-        
+
         return assessment
-        
+
     except Exception as e:
         raise ValueError(f"OpenAI evaluation failed: {str(e)}")
 
 
-async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_context: str) -> ModelAssessment:
+async def _evaluate_with_anthropic(
+    model_name: str, claim: Claim, evidence_context: str
+) -> ModelAssessment:
     """Evaluate claim using Anthropic Claude models"""
-    
+
     try:
         # Map model names to Anthropic API names
         model_mapping = {
@@ -249,49 +284,48 @@ async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_conte
             "claude-sonnet-4": "claude-sonnet-4-20250514",
             "claude-opus-4": "claude-opus-4-20250514",
             "claude-opus-4-1": "claude-opus-4-1-20250805",
-            "claude-3-7-sonnet": "claude-3-7-sonnet-20250219"
+            "claude-3-7-sonnet": "claude-3-7-sonnet-20250219",
         }
-        
+
         api_model_name = model_mapping.get(model_name, model_name)
-        
+
         response = await anthropic_client.messages.create(
             model=api_model_name,
             max_tokens=1000,
             temperature=0.1,
             system=SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": evidence_context}
-            ]
+            messages=[{"role": "user", "content": evidence_context}],
         )
-        
+
         # Handle different response content types - use getattr to avoid type issues
         response_text = ""
         for content_block in response.content:
             # Use getattr to safely access text attribute
-            text = getattr(content_block, 'text', None)
+            text = getattr(content_block, "text", None)
             if text:
                 response_text += text
-        
+
         response_text = response_text.strip()
         if not response_text and response.content:
             # Fallback to string representation of first content block
             response_text = str(response.content[0])
-        
+
         if not response_text:
             raise ValueError("No text content found in Anthropic response")
-        
+
         # Parse JSON response
         try:
             result = json.loads(response_text)
         except json.JSONDecodeError:
             # Try to extract JSON from response
             import re
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+
+            json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
             if json_match:
                 result = json.loads(json_match.group())
             else:
                 raise ValueError("Could not parse JSON response")
-        
+
         # Convert citation strings to UUIDs
         citation_ids = []
         for citation in result.get("citations", []):
@@ -301,17 +335,17 @@ async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_conte
                     if str(evidence.id) == citation or citation in str(evidence.id):
                         citation_ids.append(evidence.id)
                         break
-        
+
         assessment = ModelAssessment(
             model_name=model_name,
             verdict=VerdictType(result["verdict"]),
             confidence=float(result["confidence"]),
             citations=citation_ids,
-            rationale=result["rationale"]
+            rationale=result["rationale"],
         )
-        
+
         return assessment
-        
+
     except Exception as e:
         raise ValueError(f"Anthropic evaluation failed: {str(e)}")
 
@@ -319,27 +353,27 @@ async def _evaluate_with_anthropic(model_name: str, claim: Claim, evidence_conte
 async def get_default_models() -> List[str]:
     """Get list of default models to use for evaluation - best from each provider"""
     models = []
-    
+
     # OpenAI - Use GPT-5 (the most advanced model)
     if os.getenv("OPENAI_API_KEY"):
         models.append("gpt-5")  # Latest and most capable OpenAI model
-    
+
     # Anthropic - Use the best Claude model
     if os.getenv("ANTHROPIC_API_KEY"):
         models.append("claude-sonnet-4-20250514")  # Best Claude model
-    
+
     if not models:
         # Mock models for demo purposes when no API keys available
         models = ["gpt-5-demo", "claude-3-demo"]
-    
+
     return models
 
 
 async def create_mock_assessments(claim: Claim) -> List[ModelAssessment]:
     """Create mock assessments for demo purposes when APIs are unavailable"""
-    
+
     mock_assessments = []
-    
+
     # Mock GPT-5 assessment
     gpt_assessment = ModelAssessment(
         model_name="gpt-5-demo",
@@ -347,13 +381,13 @@ async def create_mock_assessments(claim: Claim) -> List[ModelAssessment]:
         confidence=0.75,
         citations=[claim.evidence[0].id] if claim.evidence else [],
         rationale="The claim 'Violent crime in Canada is rising' requires temporal context. "
-                 "Based on Statistics Canada data, violent crime severity decreased slightly in 2024 (~1%) "
-                 "but had increased cumulatively by ~15% over the preceding 3-year period (2021-2023). "
-                 "The claim is therefore both supported (recent 3-year trend) and contradicted (2024 data). "
-                 "Important caveats: data reflects police-reported crimes only; actual rates may differ."
+        "Based on Statistics Canada data, violent crime severity decreased slightly in 2024 (~1%) "
+        "but had increased cumulatively by ~15% over the preceding 3-year period (2021-2023). "
+        "The claim is therefore both supported (recent 3-year trend) and contradicted (2024 data). "
+        "Important caveats: data reflects police-reported crimes only; actual rates may differ.",
     )
     mock_assessments.append(gpt_assessment)
-    
+
     # Mock Claude assessment
     claude_assessment = ModelAssessment(
         model_name="claude-3-demo",
@@ -361,11 +395,11 @@ async def create_mock_assessments(claim: Claim) -> List[ModelAssessment]:
         confidence=0.65,
         citations=[claim.evidence[0].id] if claim.evidence else [],
         rationale="The statement lacks sufficient temporal specificity to evaluate definitively. "
-                 "Crime Severity Index data shows mixed trends: a decrease in 2024 following increases in 2021-2023. "
-                 "The claim could be accurate for the 2021-2023 period but inaccurate for 2024. "
-                 "Additionally, police-reported statistics have known limitations regarding under-reporting, "
-                 "which affects the reliability of any definitive assessment."
+        "Crime Severity Index data shows mixed trends: a decrease in 2024 following increases in 2021-2023. "
+        "The claim could be accurate for the 2021-2023 period but inaccurate for 2024. "
+        "Additionally, police-reported statistics have known limitations regarding under-reporting, "
+        "which affects the reliability of any definitive assessment.",
     )
     mock_assessments.append(claude_assessment)
-    
+
     return mock_assessments
