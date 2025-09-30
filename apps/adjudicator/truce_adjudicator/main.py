@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
