@@ -16,6 +16,7 @@ from .models import (
     Claim,
     ClaimCreate,
     ClaimResponse,
+    Evidence,
     ConsensusStatement,
     ConsensusStatementRequest,
     ConsensusSummary,
@@ -38,6 +39,10 @@ from .verification import (
     get_cached_verification,
     store_verification,
 )
+from .mcp import ExplorerAgent
+from .mcp.explorer import normalize_url
+
+explorer_agent = ExplorerAgent()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -80,7 +85,7 @@ def generate_slug(text: str) -> str:
 
 def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[datetime]:
     """Parse ISO8601 query parameters into datetime objects.
-    
+
     Returns timezone-naive UTC datetimes to match Evidence.published_at format.
     """
     if value in (None, ""):
@@ -97,6 +102,65 @@ def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[date
             status_code=400,
             detail=f"Invalid {field_name}: must be ISO 8601 format",
         ) from exc
+
+
+async def _gather_and_persist_sources(
+    claim_slug: str, claim: Claim, window: TimeWindow
+) -> List[Evidence]:
+    """Gather explorer sources, deduplicate them, and persist as evidence."""
+
+    gathered_sources = await explorer_agent.gather_sources(claim.text, window)
+    if not gathered_sources:
+        return []
+    # Build deduplication sets from all existing evidence, not just those with snippets
+    existing_urls = {
+        evidence.normalized_url
+        for evidence in claim.evidence
+        if evidence.normalized_url
+    }
+    existing_hashes = {
+        evidence.content_hash
+        for evidence in claim.evidence
+        if evidence.content_hash
+    }
+
+    new_evidence: List[Evidence] = []
+
+    for source in gathered_sources:
+        normalized_url = source.normalized_url or normalize_url(source.url)
+        content_hash = source.content_hash
+
+        if normalized_url and normalized_url in existing_urls:
+            continue
+        if content_hash and content_hash in existing_hashes:
+            continue
+
+        evidence = source.to_evidence(provenance="mcp-explorer")
+        
+        claim.evidence.append(evidence)
+        new_evidence.append(evidence)
+
+        # Update deduplication sets to catch duplicates within the current batch
+        if evidence.normalized_url:
+            existing_urls.add(evidence.normalized_url)
+        if evidence.content_hash:
+            existing_hashes.add(evidence.content_hash)
+
+    if new_evidence:
+        search_index.index_evidence_batch(
+            claim_slug,
+            [
+                {
+                    "evidence_id": str(evidence.id),
+                    "snippet": evidence.snippet,
+                    "publisher": evidence.publisher,
+                    "url": evidence.url,
+                }
+                for evidence in new_evidence
+            ],
+        )
+
+    return new_evidence
 
 
 @app.get("/")
@@ -128,7 +192,7 @@ async def create_claim(claim_request: ClaimCreate):
     claims_db[slug] = claim
     search_index.index_claim(slug, claim.text)
     
-    return ClaimResponse(claim=claim)
+    return ClaimResponse(claim=claim, slug=slug)
 
 
 @app.get("/claims/{claim_id}", response_model=ClaimResponse)
@@ -243,12 +307,37 @@ async def verify_claim(
     selected_providers = providers or DEFAULT_PROVIDERS
     window = TimeWindow(start=start_dt, end=end_dt)
 
+    # Compute cache key with existing evidence before gathering new sources
     evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
-    sources_hash = compute_sources_hash(evidence_in_range)
-    cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
+    existing_sources_hash = compute_sources_hash(evidence_in_range)
+    existing_cache_key = build_cache_key(claim.text, window, selected_providers, existing_sources_hash)
 
+    # Check cache with existing evidence first (unless force refresh requested)
+    cached_record = None
     if not force:
-        cached_record = get_cached_verification(cache_key)
+        cached_record = get_cached_verification(existing_cache_key)
+
+    # Always attempt to gather new evidence to keep claims up-to-date
+    new_evidence = []
+    try:
+        new_evidence = await _gather_and_persist_sources(claim_id, claim, window)
+        if new_evidence:
+            claim.updated_at = datetime.utcnow()
+    except Exception as e:
+        # Log the error but continue with existing evidence
+        print(f"Error gathering new evidence: {e}")
+        new_evidence = []
+
+    # If new evidence was found, we need a fresh verification that includes it
+    if new_evidence:
+        # Recompute evidence and cache key with new evidence included
+        evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
+        sources_hash = compute_sources_hash(evidence_in_range)
+        cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
+    else:
+        # No new evidence, use existing values and return cached result if available
+        cache_key = existing_cache_key
+        sources_hash = existing_sources_hash
         if cached_record:
             return VerificationResponse(
                 verification_id=cached_record.id,
@@ -260,6 +349,7 @@ async def verify_claim(
                 time_window=cached_record.time_window,
             )
 
+    # Create new verification record since no cached version exists
     new_record = create_verification_record(
         claim=claim,
         claim_slug=claim_id,

@@ -1,15 +1,15 @@
-# How to Verify M1 Updates
+# How to Verify M1–M2 Updates
 
 ## Automated checks
-1. Backend cache & time-window tests
+1. Targeted backend tests (cache + explorer pipeline)
    ```bash
    cd apps/adjudicator
-   python3 -m pytest tests/test_verification_cache.py
+   python3 -m pytest tests/test_explorer_agent.py tests/test_verification_cache.py
    ```
-   > Note: running the full `pytest` suite may segfault in this environment because of optional native dependencies; the targeted suite above exercises the new verification cache logic end-to-end.
+   > Full `pytest` runs may segfault locally due to optional native deps (pandas/scikit); the targeted suites cover the new caching and MCP explorer flows end-to-end.
 
 ## Manual smoke tests
-1. Start the API and web app (separate terminals):
+1. Start the API and web app in separate terminals:
    ```bash
    cd apps/adjudicator
    uvicorn truce_adjudicator.main:app --reload
@@ -18,14 +18,15 @@
    cd apps/web
    npm run dev
    ```
-2. Visit `http://localhost:3000` and use the hero search bar. Enter a term such as “crime severity” to confirm `/search` results show both claim cards and evidence snippets.
-3. Open the demo claim at `/claim/violent-crime-in-canada-is-rising`:
-   - Adjust the start/end date pickers and observe the verification card re-run automatically.
-   - Toggle “Refresh with latest” to confirm the cached badge disappears on a forced refresh and returns on subsequent runs.
-   - Verify provider checkboxes affect the request (inspect network tab: `providers[]` query params change).
-4. (Optional) Hit the API directly to inspect cache behaviour:
+2. Visit `http://localhost:3000`:
+   - Use the hero search bar to query “crime severity” and confirm claim/evidence hits surface via `/search`.
+3. Navigate to `/claim/violent-crime-in-canada-is-rising`:
+   - Adjust the start/end date pickers and watch the verification controls re-run automatically.
+   - Toggle “Refresh with latest” to force bypassing cache (`cached: false` should appear in the response before returning to cached on the next run).
+   - Confirm the provider checkboxes update the `providers[]` query params in the network tab.
+   - After a verify run, open the “Evidence & Sources” list and scroll to the latest entries — new items should show `provenance: mcp-explorer`, include titles, and reflect the current timestamp.
+4. (Optional) Inspect the API directly:
    ```bash
-   curl -s -X POST "http://localhost:8000/claims/violent-crime-in-canada-is-rising/verify" | jq
-   curl -s -X POST "http://localhost:8000/claims/violent-crime-in-canada-is-rising/verify?force=true" | jq
+   curl -s -X POST "http://localhost:8000/claims/violent-crime-in-canada-is-rising/verify" | jq '.evidence_ids'
    ```
-   Expect the second response to show `cached: false` with a new `verification_id`.
+   Re-run with `force=true` and note that a new `verification_id` is issued while previously gathered evidence is reused (no duplicate URLs).

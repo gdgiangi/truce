@@ -37,9 +37,35 @@ class Evidence(BaseModel):
     url: str
     publisher: str
     published_at: Optional[datetime] = None
+    retrieved_at: datetime = Field(default_factory=datetime.utcnow)
+    title: Optional[str] = None
+    domain: Optional[str] = None
     snippet: str = Field(..., max_length=1000)
     provenance: str = Field(..., description="How this evidence was obtained")
+    normalized_url: Optional[str] = None
+    content_hash: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    def model_post_init(self, _context: Any) -> None:
+        """
+        Pydantic v2 lifecycle hook called after model initialization.
+
+        This method automatically computes the `normalized_url` and `content_hash` fields
+        if they are not provided during instantiation. It is invoked after the model's
+        fields have been populated, allowing for post-processing or validation.
+
+        Args:
+            _context (Any): Context information provided by Pydantic (unused).
+        """
+        if not self.normalized_url and self.url:
+            from .mcp.explorer import normalize_url
+            self.normalized_url = normalize_url(self.url)
+        
+        if not self.content_hash:
+            from .mcp.explorer import compute_content_hash
+            title = self.title or ""
+            snippet = self.snippet or ""
+            self.content_hash = compute_content_hash(title, snippet)
 
 
 class ModelAssessment(BaseModel):
@@ -206,6 +232,7 @@ class ReplayBundle(BaseModel):
 class ClaimResponse(BaseModel):
     """API response for a claim"""
     claim: Claim
+    slug: Optional[str] = None
     consensus_score: Optional[float] = None
     provenance_verified: bool = False
     replay_bundle_url: Optional[str] = None
