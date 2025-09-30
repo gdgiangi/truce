@@ -46,7 +46,7 @@ class Evidence(BaseModel):
     content_hash: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, _context: Any) -> None:
         """Auto-compute normalized_url and content_hash if not provided."""
         if not self.normalized_url and self.url:
             from .mcp.explorer import normalize_url

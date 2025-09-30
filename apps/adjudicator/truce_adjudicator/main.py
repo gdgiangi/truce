@@ -104,9 +104,6 @@ def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[date
         ) from exc
 
 
-
-
-
 async def _gather_and_persist_sources(
     claim_slug: str, claim: Claim, window: TimeWindow
 ) -> List[Evidence]:
@@ -115,9 +112,6 @@ async def _gather_and_persist_sources(
     gathered_sources = await explorer_agent.gather_sources(claim.text, window)
     if not gathered_sources:
         return []
-
-
-
     # Build deduplication sets from all existing evidence, not just those with snippets
     existing_urls = {
         evidence.normalized_url
@@ -232,8 +226,6 @@ async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
     try:
         evidence_list = await fetch_crime_severity_data()
         
-
-            
         claim.evidence.extend(evidence_list)
         claim.updated_at = datetime.utcnow()
 
