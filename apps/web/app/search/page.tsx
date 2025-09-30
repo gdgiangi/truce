@@ -46,7 +46,7 @@ async function fetchSearchResults(query: string): Promise<SearchResponse | null>
 }
 
 function formatScore(score: number): string {
-  const relevance = 1 / (1 + Math.max(score, 0));
+  const relevance = 1 / (1 + score);
   return relevance.toFixed(2);
 }
 
