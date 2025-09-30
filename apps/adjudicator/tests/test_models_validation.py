@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
-
+from urllib.parse import urlparse
 from truce_adjudicator.models import (
     Claim,
     ClaimCreate,
@@ -185,7 +185,7 @@ class TestEvidence:
         assert evidence.content_hash is not None
         assert evidence.normalized_url != evidence.url  # Should be normalized
         # Normalization should lowercase domain and sort query params
-        assert "example.com" in evidence.normalized_url  # lowercase
+        assert urlparse(evidence.normalized_url).hostname == "example.com"  # lowercase domain
         assert "a=1&z=2" in evidence.normalized_url  # sorted params
 
     @pytest.mark.unit
