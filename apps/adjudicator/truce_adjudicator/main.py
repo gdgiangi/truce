@@ -225,7 +225,6 @@ async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
     
     try:
         evidence_list = await fetch_crime_severity_data()
-        
         claim.evidence.extend(evidence_list)
         claim.updated_at = datetime.utcnow()
 
