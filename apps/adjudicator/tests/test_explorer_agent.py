@@ -1,6 +1,6 @@
 """Tests for the explorer MCP agent and integration into verification."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List
 from unittest.mock import AsyncMock
 
