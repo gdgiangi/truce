@@ -104,9 +104,6 @@ def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[date
         ) from exc
 
 
-
-
-
 async def _gather_and_persist_sources(
     claim_slug: str, claim: Claim, window: TimeWindow
 ) -> List[Evidence]:
