@@ -104,16 +104,7 @@ def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[date
         ) from exc
 
 
-def _ensure_evidence_hashes(evidence: Evidence) -> None:
-    """Ensure evidence has normalized_url and content_hash computed."""
-    if not evidence.normalized_url and evidence.url:
-        evidence.normalized_url = normalize_url(evidence.url)
-    
-    if not evidence.content_hash:
-        # Compute hash for all evidence, even those without snippets
-        title = evidence.title or ""
-        snippet = evidence.snippet or ""
-        evidence.content_hash = compute_content_hash(title, snippet)
+
 
 
 async def _gather_and_persist_sources(
@@ -125,9 +116,7 @@ async def _gather_and_persist_sources(
     if not gathered_sources:
         return []
 
-    # Ensure all existing evidence has computed hashes for proper deduplication
-    for evidence in claim.evidence:
-        _ensure_evidence_hashes(evidence)
+
 
     # Build deduplication sets from all existing evidence, not just those with snippets
     existing_urls = {
@@ -153,8 +142,6 @@ async def _gather_and_persist_sources(
             continue
 
         evidence = source.to_evidence(provenance="mcp-explorer")
-        # Ensure new evidence also has computed hashes
-        _ensure_evidence_hashes(evidence)
         
         claim.evidence.append(evidence)
         new_evidence.append(evidence)
@@ -245,9 +232,7 @@ async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
     try:
         evidence_list = await fetch_crime_severity_data()
         
-        # Ensure all evidence has pre-computed hashes for performance
-        for evidence in evidence_list:
-            _ensure_evidence_hashes(evidence)
+
             
         claim.evidence.extend(evidence_list)
         claim.updated_at = datetime.utcnow()
