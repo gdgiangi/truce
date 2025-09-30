@@ -15,9 +15,32 @@ from ..models import Claim, ModelAssessment, VerdictType
 # Load environment variables
 load_dotenv()
 
-# API clients
-openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-anthropic_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# API clients - initialized lazily when needed
+_openai_client = None
+_anthropic_client = None
+
+
+def get_openai_client():
+    """Get OpenAI client, initializing if needed"""
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        _openai_client = openai.AsyncOpenAI(api_key=api_key)
+    return _openai_client
+
+
+def get_anthropic_client():
+    """Get Anthropic client, initializing if needed"""
+    global _anthropic_client
+    if _anthropic_client is None:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        _anthropic_client = anthropic.AsyncAnthropic(api_key=api_key)
+    return _anthropic_client
+
 
 SYSTEM_PROMPT = """You are an objective fact-checking assistant. Your job is to evaluate claims based on provided evidence.
 
@@ -117,6 +140,7 @@ async def _evaluate_with_openai(
     """Evaluate claim using OpenAI models"""
 
     try:
+        openai_client = get_openai_client()
         # Handle GPT-5 differently - it uses the responses API
         if model_name.startswith("gpt-5"):
             # GPT-5 uses a different API endpoint and format
@@ -274,6 +298,7 @@ async def _evaluate_with_anthropic(
     """Evaluate claim using Anthropic Claude models"""
 
     try:
+        anthropic_client = get_anthropic_client()
         # Map model names to Anthropic API names
         model_mapping = {
             "claude-3": "claude-3-sonnet-20240229",
