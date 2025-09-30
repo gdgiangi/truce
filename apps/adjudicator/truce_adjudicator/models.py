@@ -142,11 +142,9 @@ class Vote(BaseModel):
     @classmethod
     def validate_identity(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
         """Ensure either user_id or session_id is provided"""
-        if (
-            info.field_name == "session_id"
-            and v is None
-            and info.data.get("user_id") is None
-        ):
+        user_id = info.data.get("user_id")
+        session_id = info.data.get("session_id")
+        if user_id is None and session_id is None:
             raise ValueError("Either user_id or session_id must be provided")
         return v
 
