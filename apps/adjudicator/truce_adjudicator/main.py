@@ -104,6 +104,18 @@ def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[date
         ) from exc
 
 
+def _ensure_evidence_hashes(evidence: Evidence) -> None:
+    """Ensure evidence has normalized_url and content_hash computed."""
+    if not evidence.normalized_url and evidence.url:
+        evidence.normalized_url = normalize_url(evidence.url)
+    
+    if not evidence.content_hash:
+        # Compute hash for all evidence, even those without snippets
+        title = evidence.title or ""
+        snippet = evidence.snippet or ""
+        evidence.content_hash = compute_content_hash(title, snippet)
+
+
 async def _gather_and_persist_sources(
     claim_slug: str, claim: Claim, window: TimeWindow
 ) -> List[Evidence]:
@@ -113,15 +125,20 @@ async def _gather_and_persist_sources(
     if not gathered_sources:
         return []
 
+    # Ensure all existing evidence has computed hashes for proper deduplication
+    for evidence in claim.evidence:
+        _ensure_evidence_hashes(evidence)
+
+    # Build deduplication sets from all existing evidence, not just those with snippets
     existing_urls = {
-        evidence.normalized_url or normalize_url(evidence.url)
+        evidence.normalized_url
         for evidence in claim.evidence
-        if evidence.url
+        if evidence.normalized_url
     }
     existing_hashes = {
-        evidence.content_hash or compute_content_hash(evidence.title or "", evidence.snippet)
+        evidence.content_hash
         for evidence in claim.evidence
-        if evidence.snippet
+        if evidence.content_hash
     }
 
     new_evidence: List[Evidence] = []
@@ -136,9 +153,13 @@ async def _gather_and_persist_sources(
             continue
 
         evidence = source.to_evidence(provenance="mcp-explorer")
+        # Ensure new evidence also has computed hashes
+        _ensure_evidence_hashes(evidence)
+        
         claim.evidence.append(evidence)
         new_evidence.append(evidence)
 
+        # Update deduplication sets to catch duplicates within the current batch
         if evidence.normalized_url:
             existing_urls.add(evidence.normalized_url)
         if evidence.content_hash:
@@ -223,6 +244,11 @@ async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
     
     try:
         evidence_list = await fetch_crime_severity_data()
+        
+        # Ensure all evidence has pre-computed hashes for performance
+        for evidence in evidence_list:
+            _ensure_evidence_hashes(evidence)
+            
         claim.evidence.extend(evidence_list)
         claim.updated_at = datetime.utcnow()
 
@@ -305,16 +331,41 @@ async def verify_claim(
     selected_providers = providers or DEFAULT_PROVIDERS
     window = TimeWindow(start=start_dt, end=end_dt)
 
-    new_evidence = await _gather_and_persist_sources(claim_id, claim, window)
+    # Check cache first with existing evidence to serve cached results even when explorer is unreachable
+    existing_evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
+    existing_sources_hash = compute_sources_hash(existing_evidence_in_range)
+    existing_cache_key = build_cache_key(claim.text, window, selected_providers, existing_sources_hash)
 
-    if new_evidence:
-        claim.updated_at = datetime.utcnow()
+    if not force:
+        cached_record = get_cached_verification(existing_cache_key)
+        if cached_record:
+            return VerificationResponse(
+                verification_id=cached_record.id,
+                cached=True,
+                verdict=cached_record.verdict,
+                created_at=cached_record.created_at,
+                providers=cached_record.providers,
+                evidence_ids=cached_record.evidence_ids,
+                time_window=cached_record.time_window,
+            )
 
+    # Try to gather new evidence, but don't fail the entire request if explorer is unreachable
+    new_evidence = []
+    try:
+        new_evidence = await _gather_and_persist_sources(claim_id, claim, window)
+        if new_evidence:
+            claim.updated_at = datetime.utcnow()
+    except Exception as e:
+        logger.warning(f"Explorer agent failed to gather sources for claim {claim_id}: {e}")
+        # Continue with existing evidence if explorer fails
+
+    # Recompute cache key with potentially new evidence
     evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
     sources_hash = compute_sources_hash(evidence_in_range)
     cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
 
-    if not force:
+    # Check cache again with updated evidence (if any new evidence was added)
+    if not force and cache_key != existing_cache_key:
         cached_record = get_cached_verification(cache_key)
         if cached_record:
             return VerificationResponse(

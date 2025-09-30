@@ -46,6 +46,18 @@ class Evidence(BaseModel):
     content_hash: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+    def model_post_init(self, __context: Any) -> None:
+        """Auto-compute normalized_url and content_hash if not provided."""
+        if not self.normalized_url and self.url:
+            from .mcp.explorer import normalize_url
+            self.normalized_url = normalize_url(self.url)
+        
+        if not self.content_hash:
+            from .mcp.explorer import compute_content_hash
+            title = self.title or ""
+            snippet = self.snippet or ""
+            self.content_hash = compute_content_hash(title, snippet)
+
 
 class ModelAssessment(BaseModel):
     """Assessment of a claim by an AI model"""
