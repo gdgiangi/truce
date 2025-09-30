@@ -236,6 +236,7 @@ class VerificationResponse(BaseModel):
     created_at: datetime
     providers: List[str]
     evidence_ids: List[UUID]
+    assessment_ids: List[UUID] = Field(default_factory=list)
     time_window: TimeWindow
 
 

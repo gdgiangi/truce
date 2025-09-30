@@ -211,6 +211,7 @@ async def get_claim(claim_id: str):
 
     return ClaimResponse(
         claim=claim,
+        slug=claim_id,  # Include the claim_id as slug in response
         consensus_score=consensus_score,
         provenance_verified=len(claim.evidence) > 0,
         replay_bundle_url=f"/replay/{claim_id}.jsonl",
@@ -218,7 +219,7 @@ async def get_claim(claim_id: str):
 
 
 @app.post("/claims/{claim_id}/evidence:statcan")
-async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
+async def add_statcan_evidence(claim_id: str, request: Optional[EvidenceRequest] = None):
     """Add Statistics Canada evidence to a claim"""
     claim = get_claim_by_id(claim_id)
 
@@ -253,14 +254,16 @@ async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
 @app.get("/search", response_model=SearchResponse)
 async def search_claims(q: str = Query(..., min_length=1)):
     """Search claims and evidence via SQLite FTS."""
+    from .models import ClaimSearchHit, EvidenceSearchHit
+    
     claim_rows, evidence_rows = search_index.search(q)
 
     claim_hits = [
-        {
-            "slug": row["slug"],
-            "text": row["text"],
-            "score": float(row["score"]),
-        }
+        ClaimSearchHit(
+            slug=row["slug"],
+            text=row["text"],
+            score=float(row["score"]),
+        )
         for row in claim_rows
     ]
 
@@ -277,14 +280,14 @@ async def search_claims(q: str = Query(..., min_length=1)):
             continue
 
         evidence_hits.append(
-            {
-                "claim_slug": row["claim_slug"],
-                "evidence_id": evidence_uuid,
-                "snippet": row["snippet"],
-                "publisher": row["publisher"],
-                "url": row["url"],
-                "score": float(row["score"]),
-            }
+            EvidenceSearchHit(
+                claim_slug=row["claim_slug"],
+                evidence_id=evidence_uuid,
+                snippet=row["snippet"],
+                publisher=row["publisher"],
+                url=row["url"],
+                score=float(row["score"]),
+            )
         )
 
     return SearchResponse(query=q, claims=claim_hits, evidence=evidence_hits)
@@ -359,6 +362,7 @@ async def verify_claim(
                 created_at=cached_record.created_at,
                 providers=cached_record.providers,
                 evidence_ids=cached_record.evidence_ids,
+                assessment_ids=[a.id for a in claim.model_assessments],
                 time_window=cached_record.time_window,
             )
 
@@ -382,6 +386,7 @@ async def verify_claim(
         created_at=new_record.created_at,
         providers=new_record.providers,
         evidence_ids=new_record.evidence_ids,
+        assessment_ids=[a.id for a in claim.model_assessments],
         time_window=new_record.time_window,
     )
 
@@ -551,7 +556,7 @@ async def get_replay_bundle(claim_id: str):
     try:
         bundle = await create_replay_bundle(claim)
         return JSONResponse(
-            content=bundle.dict(), headers={"Content-Type": "application/json"}
+            content=bundle.model_dump(mode="json"), headers={"Content-Type": "application/json"}
         )
     except Exception as e:
         raise HTTPException(

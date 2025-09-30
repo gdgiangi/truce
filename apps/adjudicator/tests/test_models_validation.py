@@ -173,7 +173,7 @@ class TestEvidence:
     def test_evidence_auto_fields(self):
         """Test auto-computed fields"""
         evidence = Evidence(
-            url="https://example.com/path?param=1",
+            url="https://EXAMPLE.COM/path/?z=2&a=1",  # URL that will be normalized
             publisher="Test",
             snippet="Test snippet",
             provenance="test",
@@ -184,6 +184,9 @@ class TestEvidence:
         assert evidence.normalized_url is not None
         assert evidence.content_hash is not None
         assert evidence.normalized_url != evidence.url  # Should be normalized
+        # Normalization should lowercase domain and sort query params
+        assert "example.com" in evidence.normalized_url  # lowercase
+        assert "a=1&z=2" in evidence.normalized_url  # sorted params
 
     @pytest.mark.unit
     def test_evidence_optional_fields(self):
@@ -317,11 +320,11 @@ class TestHumanReview:
         """Test notes field validation"""
         # Notes too long
         with pytest.raises(ValidationError):
-            HumanReview(author="expert", verdict=VerdictType.SUPPORTS, notes="x" * 2001)
+            HumanReview(author="expert", verdict=VerdictType.SUPPORTS, notes="x" * 2001, signature_vc=None)
 
         # Valid notes
         review = HumanReview(
-            author="expert", verdict=VerdictType.SUPPORTS, notes="Valid notes"
+            author="expert", verdict=VerdictType.SUPPORTS, notes="Valid notes", signature_vc=None
         )
         assert review.notes == "Valid notes"
 

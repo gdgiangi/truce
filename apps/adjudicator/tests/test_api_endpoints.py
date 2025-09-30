@@ -354,15 +354,16 @@ class TestConsensusEndpoints:
         vote_data = {
             "statement_id": statement_id,
             "vote": "agree",
-            "participant_id": "test-user-1",
+            "user_id": "test-user-1",
         }
 
         response = client.post("/consensus/canada-crime/votes", json=vote_data)
         assert response.status_code == 200
 
         data = response.json()
-        assert data["vote"] == "agree"
-        assert data["statement_id"] == statement_id
+        assert data["status"] == "success"
+        assert data["vote"]["vote"] == "agree"
+        assert data["vote"]["statement_id"] == statement_id
 
     @pytest.mark.api
     def test_get_consensus_summary(self, client):
@@ -379,7 +380,7 @@ class TestConsensusEndpoints:
             vote_data = {
                 "statement_id": statement_id,
                 "vote": "agree" if i % 2 == 0 else "disagree",
-                "participant_id": f"user-{i}",
+                "user_id": f"user-{i}",
             }
             client.post("/consensus/test-topic/votes", json=vote_data)
 
@@ -388,9 +389,11 @@ class TestConsensusEndpoints:
 
         data = response.json()
         assert "topic" in data
-        assert "statements" in data
-        assert "total_votes" in data
-        assert len(data["statements"]) == 3
+        assert "statement_count" in data
+        assert "vote_count" in data
+        # Should have 3 total statements distributed across categories  
+        total_statements = len(data["overall_consensus"]) + len(data["divisive"]) + len(data["unvoted"])
+        assert total_statements == 3
 
 
 class TestReplayEndpoint:
