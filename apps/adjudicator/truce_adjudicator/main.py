@@ -316,7 +316,17 @@ async def verify_claim(
     selected_providers = providers or DEFAULT_PROVIDERS
     window = TimeWindow(start=start_dt, end=end_dt)
 
-    # Try to gather new evidence first to enable fresh evidence discovery
+    # Compute cache key with existing evidence before gathering new sources
+    evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
+    existing_sources_hash = compute_sources_hash(evidence_in_range)
+    existing_cache_key = build_cache_key(claim.text, window, selected_providers, existing_sources_hash)
+
+    # Check cache with existing evidence first (unless force refresh requested)
+    cached_record = None
+    if not force:
+        cached_record = get_cached_verification(existing_cache_key)
+
+    # Always attempt to gather new evidence to keep claims up-to-date
     new_evidence = []
     try:
         new_evidence = await _gather_and_persist_sources(claim_id, claim, window)
@@ -326,14 +336,16 @@ async def verify_claim(
         logger.warning(f"Explorer agent failed to gather sources for claim {claim_id}: {e}")
         # Continue with existing evidence if explorer fails
 
-    # Compute cache key with current evidence set (including any newly discovered sources)
-    evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
-    sources_hash = compute_sources_hash(evidence_in_range)
-    cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
-
-    # Check cache only after attempting to discover new evidence
-    if not force:
-        cached_record = get_cached_verification(cache_key)
+    # If new evidence was found, we need a fresh verification that includes it
+    if new_evidence:
+        # Recompute evidence and cache key with new evidence included
+        evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
+        sources_hash = compute_sources_hash(evidence_in_range)
+        cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
+    else:
+        # No new evidence, use existing values and return cached result if available
+        cache_key = existing_cache_key
+        sources_hash = existing_sources_hash
         if cached_record:
             return VerificationResponse(
                 verification_id=cached_record.id,
