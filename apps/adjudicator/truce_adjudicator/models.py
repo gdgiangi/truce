@@ -37,8 +37,13 @@ class Evidence(BaseModel):
     url: str
     publisher: str
     published_at: Optional[datetime] = None
+    retrieved_at: datetime = Field(default_factory=datetime.utcnow)
+    title: Optional[str] = None
+    domain: Optional[str] = None
     snippet: str = Field(..., max_length=1000)
     provenance: str = Field(..., description="How this evidence was obtained")
+    normalized_url: Optional[str] = None
+    content_hash: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -206,6 +211,7 @@ class ReplayBundle(BaseModel):
 class ClaimResponse(BaseModel):
     """API response for a claim"""
     claim: Claim
+    slug: Optional[str] = None
     consensus_score: Optional[float] = None
     provenance_verified: bool = False
     replay_bundle_url: Optional[str] = None

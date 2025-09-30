@@ -43,9 +43,11 @@ async def seed_canadian_crime_claim():
             response.raise_for_status()
             claim_response = response.json()
             
-            # Calculate the correct slug the same way the API does
-            slug = claim_data["text"].lower().replace(" ", "-").replace(".", "")[:50]
-            slug = ''.join(c for c in slug if c.isalnum() or c == '-')
+            # Get the actual slug from the API response
+            slug = claim_response.get("slug")
+            if not slug:
+                print("❌ API did not return a slug")
+                return None
             
             print(f"✅ Created claim: {claim_data['text']}")
             print(f"   Slug: {slug}")
