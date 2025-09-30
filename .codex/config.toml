@@ -1,0 +1,3 @@
+model = "gpt-5-codex-high"
+model_provider = "openai" 
+model_reasoning_effort = "high"

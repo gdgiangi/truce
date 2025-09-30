@@ -129,6 +129,59 @@ class ConsensusSummary(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class TimeWindow(BaseModel):
+    """Optional time window for evidence filtering."""
+    start: Optional[datetime] = None
+    end: Optional[datetime] = None
+
+
+class ClaimSearchHit(BaseModel):
+    """Search hit for a claim."""
+    slug: str
+    text: str
+    score: float
+
+
+class EvidenceSearchHit(BaseModel):
+    """Search hit for evidence associated with a claim."""
+    claim_slug: str
+    evidence_id: UUID
+    snippet: str
+    publisher: str
+    url: str
+    score: float
+
+
+class SearchResponse(BaseModel):
+    """Combined search response across claims and evidence."""
+    query: str
+    claims: List[ClaimSearchHit] = Field(default_factory=list)
+    evidence: List[EvidenceSearchHit] = Field(default_factory=list)
+
+
+class VerificationRecord(BaseModel):
+    """Persistent record of a verification run."""
+    id: UUID = Field(default_factory=uuid4)
+    claim_slug: str
+    verdict: VerdictType
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    providers: List[str]
+    evidence_ids: List[UUID] = Field(default_factory=list)
+    sources_hash: str
+    time_window: TimeWindow = Field(default_factory=TimeWindow)
+
+
+class VerificationResponse(BaseModel):
+    """API response payload for verification requests."""
+    verification_id: UUID
+    cached: bool
+    verdict: VerdictType
+    created_at: datetime
+    providers: List[str]
+    evidence_ids: List[UUID]
+    time_window: TimeWindow
+
+
 class StatCanData(BaseModel):
     """Statistics Canada data response"""
     table_id: str
