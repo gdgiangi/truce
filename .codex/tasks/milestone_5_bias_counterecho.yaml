@@ -1,0 +1,18 @@
+extends: "./_shared.yaml"
+name: "M5 – Bias, Provenance & Counter-echo Features"
+ask: |
+  Implement feature_spec at feature_specs/m5_bias_counterecho.md.
+  Deliver:
+  - Compute and store source diversity metrics per verification (domain spread, geo spread, media type).
+  - Contrarian subagent: intentionally search for counterclaims and conflicting evidence; tag conflicts.
+  - UI: diversity score, conflict badges, “See opposing evidence” panel.
+  - Temporal drift flag: show when evidence is stale or superseded; suggest refresh.
+  - Tests: diversity calculation, conflict tagging, drift triggering on stale dates.
+inputs:
+  - path: feature_specs/m5_bias_counterecho.md
+outputs:
+  - plan.md
+  - HOW_TO_VERIFY.md
+  - apps/adjudicator/**/*
+  - apps/web/**/*
+  - tests/**/*

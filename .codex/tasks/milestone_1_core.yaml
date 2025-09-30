@@ -1,0 +1,20 @@
+extends: "./_shared.yaml"
+name: "M1 – Core: search, time-windowed verify, deterministic cache"
+ask: |
+  Implement feature_spec at feature_specs/m1_core_search_cache.md.
+  Deliver:
+  - SQLite FTS (or reuse existing) for claims/evidence search.
+  - /search endpoint (query param `q`).
+  - /claims/{slug}/verify?time_start&time_end&providers[]&force:
+      * compute deterministic cache key using: claim_text_hash + normalized time window + sorted provider IDs + sources_hash
+      * on cache hit, return cached=true with verification_id.
+  - Minimal Next.js UI: SearchBar + Claim page time-window controls + “Refresh with latest” toggle.
+  - Tests: cache hit, cache miss on force, time-window respected.
+inputs:
+  - path: feature_specs/m1_core_search_cache.md
+outputs:
+  - plan.md
+  - HOW_TO_VERIFY.md
+  - apps/adjudicator/**/*
+  - apps/web/**/*
+  - tests/**/*
