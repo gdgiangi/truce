@@ -193,8 +193,6 @@ class ExplorerAgent:
                 retrieved_at = datetime.fromisoformat(retrieved_at)
             except ValueError:
                 retrieved_at = datetime.utcnow()
-        if not retrieved_at:
-            retrieved_at = datetime.utcnow()
 
         normalized_url = item.get("normalized_url") or normalize_url(item.get("url", ""))
         content_hash = item.get("content_hash") or compute_content_hash(
