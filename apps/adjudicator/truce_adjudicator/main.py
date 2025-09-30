@@ -40,7 +40,7 @@ from .verification import (
     store_verification,
 )
 from .mcp import ExplorerAgent
-from .mcp.explorer import compute_content_hash, normalize_url
+from .mcp.explorer import normalize_url
 
 explorer_agent = ExplorerAgent()
 
