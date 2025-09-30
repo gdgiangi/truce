@@ -123,7 +123,6 @@ class ExplorerAgent:
         candidates: List[Dict[str, Any]] = []
 
         for result in search_results:
-            candidates.append(result)
             enriched = await self.tools.fetch_page(result.get("url", ""))
             merged = {**result, **enriched}
             candidates.append(merged)
