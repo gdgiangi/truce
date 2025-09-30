@@ -325,9 +325,6 @@ async def verify_claim(
             claim.updated_at = datetime.utcnow()
     except Exception as e:
         logger.warning(f"Explorer agent failed to gather sources for claim {claim_id}: {e}")
-        logger.warning(
-            f"Explorer agent failed to gather sources for claim {claim_id.replace(chr(10), '').replace(chr(13), '')}: {e}"
-        )
 
     # If new evidence was found, we need a fresh verification that includes it
     if new_evidence:
