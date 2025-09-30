@@ -10,7 +10,6 @@ from truce_adjudicator.models import (
     Claim,
     ClaimCreate,
     ConsensusStatement,
-    ConsensusStatementRequest,
     Evidence,
     HumanReview,
     ModelAssessment,

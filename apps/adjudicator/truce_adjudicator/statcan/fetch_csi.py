@@ -1,7 +1,6 @@
 """Fetch Crime Severity Index data from Statistics Canada WDS API"""
 
 import asyncio
-import io
 import json
 import os
 import zipfile
