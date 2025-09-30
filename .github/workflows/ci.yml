@@ -13,6 +13,9 @@ jobs:
   backend-python:
     name: Backend (pytest)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/adjudicator
     steps:
       - uses: actions/checkout@v4
 
@@ -22,26 +25,33 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install deps
-        working-directory: apps/adjudicator
+      - name: Install dependencies
         run: |
-          if [ -f pyproject.toml ]; then pip install -e .; fi
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          # optional: if you rely on repo root requirements
-          if [ -f ../../requirements.txt ]; then pip install -r ../../requirements.txt; fi
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pytest-cov
 
-      - name: Run tests
-        working-directory: apps/adjudicator
+      - name: Run linting
+        run: |
+          # Run code quality checks
+          black --check .
+          isort --check-only .
+          flake8 .
+
+      - name: Run tests with coverage
         env:
           PYTHONUNBUFFERED: "1"
         run: |
-          if command -v pytest >/dev/null 2>&1; then
-            pytest -q
-          elif [ -f ../../Makefile ]; then
-            make -C ../../ test
-          else
-            echo "No pytest/Makefile found" && exit 1
-          fi
+          pytest --cov=truce_adjudicator --cov-report=term-missing --cov-report=xml --cov-fail-under=70
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./apps/adjudicator/coverage.xml
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
 
   frontend-web:
     name: Frontend (build + tests)
@@ -65,14 +75,23 @@ jobs:
         run: |
           if [ -f package.json ]; then npm ci; fi
 
-      - name: Test
+      - name: Run linting
         run: |
-          if npm run | grep -q " test"; then
-            npm test --if-present -- --ci --reporters=default
-          else
-            echo "No frontend tests defined (npm test). Skipping."
-          fi
+          npm run lint
+
+      - name: Run tests with coverage
+        run: |
+          npm run test:ci
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./apps/web/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+          fail_ci_if_error: false
 
       - name: Build
         run: |
-          npm run build --if-present
+          npm run build
