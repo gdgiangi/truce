@@ -108,11 +108,8 @@ async def create_claim(claim_request: ClaimCreate):
     
     # Generate slug from text for URL-friendly ID
     base_slug = generate_slug(claim_request.text)
-    slug = base_slug
-    suffix = 1
-    while slug in claims_db:
-        slug = f"{base_slug}-{suffix}"
-        suffix += 1
+    # Append a short UUID segment to ensure uniqueness
+    slug = f"{base_slug}-{uuid4().hex[:8]}"
 
     claims_db[slug] = claim
     search_index.index_claim(slug, claim.text)
