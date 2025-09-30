@@ -155,13 +155,21 @@ export function ClaimVerifier({ slug, adjudicatorUrl, defaultProviders }: ClaimV
           <div className="flex flex-wrap gap-3">
             {defaultProviders.map((provider) => {
               const checked = selectedProviders.includes(provider);
+              const isLastSelected = checked && selectedProviders.length === 1;
               return (
-                <label key={provider} className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${checked ? "border-truce-500 bg-truce-50 text-truce-700" : "border-muted"}`}>
+                <label 
+                  key={provider} 
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${
+                    checked ? "border-truce-500 bg-truce-50 text-truce-700" : "border-muted"
+                  } ${isLastSelected ? "cursor-not-allowed opacity-60" : ""}`}
+                  title={isLastSelected ? "At least one provider must remain selected" : ""}
+                >
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => toggleProvider(provider)}
-                    className="h-3 w-3"
+                    disabled={isLastSelected}
+                    className={`h-3 w-3 ${isLastSelected ? "cursor-not-allowed" : ""}`}
                     aria-label={`Toggle ${provider}`}
                   />
                   {provider}
@@ -169,6 +177,11 @@ export function ClaimVerifier({ slug, adjudicatorUrl, defaultProviders }: ClaimV
               );
             })}
           </div>
+          {selectedProviders.length === 1 && (
+            <p className="text-xs text-amber-600">
+              ⚠️ At least one provider must remain selected for verification
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

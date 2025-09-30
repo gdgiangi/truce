@@ -1,6 +1,7 @@
 """Main FastAPI application for Truce Adjudicator"""
 
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -38,6 +39,10 @@ from .verification import (
     store_verification,
 )
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # In-memory storage for demo (replace with proper database)
 claims_db: Dict[str, Claim] = {}
 statements_db: Dict[str, List[ConsensusStatement]] = {}
@@ -74,11 +79,19 @@ def generate_slug(text: str) -> str:
 
 
 def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[datetime]:
-    """Parse ISO8601 query parameters into datetime objects."""
+    """Parse ISO8601 query parameters into datetime objects.
+    
+    Returns timezone-naive UTC datetimes to match Evidence.published_at format.
+    """
     if value in (None, ""):
         return None
     try:
-        return datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(value)
+        # Convert timezone-aware datetimes to naive UTC to match Evidence timestamps
+        if dt.tzinfo is not None:
+            utc_tuple = dt.utctimetuple()
+            dt = datetime(*utc_tuple[:6])  # Convert to naive UTC datetime
+        return dt
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -106,10 +119,11 @@ async def create_claim(claim_request: ClaimCreate):
         entities=claim_request.entities,
     )
     
-    # Generate slug from text for URL-friendly ID
+    # Generate slug from text for URL-friendly ID with timestamp and random suffix
     base_slug = generate_slug(claim_request.text)
-    # Append a short UUID segment to ensure uniqueness
-    slug = f"{base_slug}-{uuid4().hex[:8]}"
+    timestamp_suffix = int(datetime.utcnow().timestamp()) % 10000  # Last 4 digits of timestamp
+    random_suffix = uuid4().hex[:4]  # Short random string
+    slug = f"{base_slug}-{timestamp_suffix}-{random_suffix}"
 
     claims_db[slug] = claim
     search_index.index_claim(slug, claim.text)
@@ -188,6 +202,7 @@ async def search_claims(q: str = Query(..., min_length=1)):
         try:
             evidence_uuid = UUID(evidence_id) if evidence_id else None
         except ValueError:
+            logger.warning("Invalid UUID format for evidence_id: %s", evidence_id)
             evidence_uuid = None
 
         if evidence_uuid is None:
