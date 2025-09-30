@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useRouter } from 'next/navigation'
-import { SearchBar } from '../components/search-bar'
+import { SearchBar } from '@/components/search-bar'
 
 // Mock Next.js router
 jest.mock('next/navigation', () => ({
