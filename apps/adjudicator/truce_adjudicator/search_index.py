@@ -69,8 +69,7 @@ def index_evidence(
     """Insert or update evidence-related search entry."""
     with _LOCK:
         _CONNECTION.execute(
-            "DELETE FROM evidence_search WHERE evidence_id = ?",
-            (evidence_id,)
+            "DELETE FROM evidence_search WHERE evidence_id = ?", (evidence_id,)
         )
         _CONNECTION.execute(
             "INSERT INTO evidence_search(claim_slug, evidence_id, snippet, publisher, url) "
@@ -100,7 +99,13 @@ def index_evidence_batch(
             _CONNECTION.execute(
                 "INSERT INTO evidence_search(claim_slug, evidence_id, snippet, publisher, url) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (claim_slug, evidence_id, snippet.strip(), publisher.strip(), url.strip()),
+                (
+                    claim_slug,
+                    evidence_id,
+                    snippet.strip(),
+                    publisher.strip(),
+                    url.strip(),
+                ),
             )
         _CONNECTION.commit()
 
@@ -112,7 +117,9 @@ def _prepare_match_query(query: str) -> str:
     return " ".join(f"{token}*" for token in tokens)
 
 
-def search(query: str, claim_limit: int = 5, evidence_limit: int = 10) -> Tuple[List[sqlite3.Row], List[sqlite3.Row]]:
+def search(
+    query: str, claim_limit: int = 5, evidence_limit: int = 10
+) -> Tuple[List[sqlite3.Row], List[sqlite3.Row]]:
     """Run FTS query across claims and evidence tables."""
     prepared = _prepare_match_query(query)
     if not prepared:

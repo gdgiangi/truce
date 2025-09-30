@@ -49,11 +49,14 @@ class ExplorerToolset:
         self, claim_text: str, time_window: Optional[TimeWindow] = None
     ) -> List[Dict[str, Any]]:
         """Return seed results for the claim (static sample)."""
+        # NOTE: claim_text and time_window are intentionally unused in this stub implementation.
         return list(_DEFAULT_SEARCH_RESULTS)
 
     async def fetch_page(self, url: str) -> Dict[str, Any]:
         """Fetch metadata for a URL (static enrichment)."""
-        entry = next((item for item in _DEFAULT_SEARCH_RESULTS if item["url"] == url), None)
+        entry = next(
+            (item for item in _DEFAULT_SEARCH_RESULTS if item["url"] == url), None
+        )
         if entry:
             return {
                 "snippet": entry["snippet"],
@@ -72,7 +75,9 @@ class ExplorerToolset:
         """Expand a URL into related resources (empty stub by default)."""
         return []
 
-    async def deduplicate_sources(self, sources: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def deduplicate_sources(
+        self, sources: Sequence[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Remove duplicate URLs while annotating normalized data."""
         unique: List[Dict[str, Any]] = []
         seen: set[str] = set()
@@ -194,7 +199,9 @@ class ExplorerAgent:
             except ValueError:
                 retrieved_at = datetime.utcnow()
 
-        normalized_url = item.get("normalized_url") or normalize_url(item.get("url", ""))
+        normalized_url = item.get("normalized_url") or normalize_url(
+            item.get("url", "")
+        )
         content_hash = item.get("content_hash") or compute_content_hash(
             item.get("title", ""), item.get("snippet", "")
         )

@@ -34,6 +34,13 @@ coverage/
 # nyc test coverage
 .nyc_output
 
+# Jest and Node.js testing
+jest-coverage/
+.jest/
+
+# Turbo
+.turbo/
+
 # Dependency directories
 jspm_packages/
 
@@ -106,6 +113,17 @@ ENV/
 env.bak/
 venv.bak/
 .pytest_cache/
+
+# Testing and Coverage
+coverage/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+.nox/
 
 # Docker
 *.dockerignore

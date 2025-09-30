@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,9 +48,23 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"consensus" | "divisive" | "unvoted" | "clusters">("consensus");
 
+  const loadConsensusSummary = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/consensus/${params.topic}/summary`);
+      if (response.ok) {
+        const data = await response.json();
+        setSummary(data);
+      }
+    } catch (error) {
+      console.error('Error loading consensus:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [params.topic]);
+
   useEffect(() => {
     loadConsensusSummary();
-  }, [params.topic]);
+  }, [loadConsensusSummary]);
 
   useEffect(() => {
     // Auto-select the tab with the most content
@@ -66,20 +80,6 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
       }
     }
   }, [summary]);
-
-  const loadConsensusSummary = async () => {
-    try {
-      const response = await fetch(`/api/consensus/${params.topic}/summary`);
-      if (response.ok) {
-        const data = await response.json();
-        setSummary(data);
-      }
-    } catch (error) {
-      console.error('Error loading consensus:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleVote = async (statementId: string, vote: "agree" | "disagree" | "pass") => {
     try {
@@ -189,7 +189,7 @@ export default function ConsensusPage({ params }: { params: { topic: string } })
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto text-center">
           <h1 className="text-2xl font-bold mb-4">Topic Not Found</h1>
-          <p>The consensus topic "{params.topic}" was not found.</p>
+          <p>The consensus topic &ldquo;{params.topic}&rdquo; was not found.</p>
         </div>
       </div>
     );

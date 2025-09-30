@@ -121,7 +121,7 @@ export default function Home() {
                 </div>
                 <CardTitle className="text-xl font-medium mb-2">Claim Analysis</CardTitle>
                 <CardDescription className="text-lg font-medium text-foreground mb-2">
-                  "Violent crime in Canada is rising."
+                  &ldquo;Violent crime in Canada is rising.&rdquo;
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-8 pb-8">

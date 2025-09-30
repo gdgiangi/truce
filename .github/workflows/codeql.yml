@@ -1,0 +1,77 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '40 3 * * 1'  # weekly
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL (js/ts + python)
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript-typescript', 'python' ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Optional but helpful for better JS/TS extraction
+      - name: Setup Node
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            apps/web/package-lock.json
+
+      - name: Install web deps (apps/web)
+        if: matrix.language == 'javascript-typescript'
+        working-directory: apps/web
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          fi
+
+      # Optional but helpful for better Python extraction
+      - name: Setup Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install backend deps (apps/adjudicator)
+        if: matrix.language == 'python'
+        working-directory: apps/adjudicator
+        run: |
+          if [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+            pip install -e .
+            if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          fi
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Include quality + extended security queries
+          queries: security-and-quality,security-extended
+
+      # For compiled langs you would build here. (Not needed for JS/Py)
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:${{ matrix.language }}'

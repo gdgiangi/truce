@@ -7,10 +7,14 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-from truce_adjudicator.main import app, claims_db, explorer_agent
 from truce_adjudicator import search_index
+from truce_adjudicator.main import app, claims_db, explorer_agent
+from truce_adjudicator.mcp.explorer import (
+    ExplorerAgent,
+    ExplorerSource,
+    ExplorerToolset,
+)
 from truce_adjudicator.models import Claim, TimeWindow
-from truce_adjudicator.mcp.explorer import ExplorerAgent, ExplorerSource, ExplorerToolset
 from truce_adjudicator.verification import reset_cache
 
 client = TestClient(app)
@@ -40,12 +44,14 @@ async def test_explorer_agent_invokes_toolchain(monkeypatch):
         "published_at": datetime(2024, 6, 1),
     }
     toolset.search_web = AsyncMock(return_value=[mock_result])
-    toolset.fetch_page = AsyncMock(return_value={
-        "snippet": "Fetched snippet",
-        "publisher": "Example",
-        "title": "Example article",
-        "published_at": datetime(2024, 6, 1),
-    })
+    toolset.fetch_page = AsyncMock(
+        return_value={
+            "snippet": "Fetched snippet",
+            "publisher": "Example",
+            "title": "Example article",
+            "published_at": datetime(2024, 6, 1),
+        }
+    )
     toolset.expand_links = AsyncMock(return_value=[])
     toolset.deduplicate_sources = AsyncMock(
         return_value=[

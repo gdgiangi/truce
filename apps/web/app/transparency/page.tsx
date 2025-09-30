@@ -233,7 +233,7 @@ export default function TransparencyPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Every claim evaluation includes a downloadable "replay bundle" containing:
+                Every claim evaluation includes a downloadable &ldquo;replay bundle&rdquo; containing:
               </p>
               
               <div className="grid md:grid-cols-2 gap-4">
