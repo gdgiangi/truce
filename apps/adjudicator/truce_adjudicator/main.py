@@ -1,12 +1,13 @@
 """Main FastAPI application for Truce Adjudicator"""
 
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
@@ -21,9 +22,26 @@ from .models import (
     ConsensusVoteRequest,
     EvidenceRequest,
     PanelRequest,
+    SearchResponse,
+    TimeWindow,
+    VerificationResponse,
     Vote,
     VoteType,
 )
+from . import search_index
+from .verification import (
+    DEFAULT_PROVIDERS,
+    build_cache_key,
+    compute_sources_hash,
+    create_verification_record,
+    filter_evidence_by_time_window,
+    get_cached_verification,
+    store_verification,
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # In-memory storage for demo (replace with proper database)
 claims_db: Dict[str, Claim] = {}
@@ -53,6 +71,34 @@ def get_claim_by_id(claim_id: str) -> Claim:
     return claims_db[claim_id]
 
 
+def generate_slug(text: str) -> str:
+    """Create URL-safe slug from claim text."""
+    slug = text.lower().replace(" ", "-").replace(".", "")
+    slug = "".join(c for c in slug if c.isalnum() or c == "-")
+    return slug[:80]
+
+
+def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[datetime]:
+    """Parse ISO8601 query parameters into datetime objects.
+    
+    Returns timezone-naive UTC datetimes to match Evidence.published_at format.
+    """
+    if value in (None, ""):
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+        # Convert timezone-aware datetimes to naive UTC to match Evidence timestamps
+        if dt.tzinfo is not None:
+            utc_tuple = dt.utctimetuple()
+            dt = datetime(*utc_tuple[:6])  # Convert to naive UTC datetime
+        return dt
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name}: must be ISO 8601 format",
+        ) from exc
+
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -73,11 +119,14 @@ async def create_claim(claim_request: ClaimCreate):
         entities=claim_request.entities,
     )
     
-    # Generate slug from text for URL-friendly ID
-    slug = claim_request.text.lower().replace(" ", "-").replace(".", "")[:50]
-    slug = ''.join(c for c in slug if c.isalnum() or c == '-')
-    
+    # Generate slug from text for URL-friendly ID with timestamp and random suffix
+    base_slug = generate_slug(claim_request.text)
+    timestamp_suffix = int(datetime.utcnow().timestamp()) % 10000  # Last 4 digits of timestamp
+    random_suffix = uuid4().hex[:4]  # Short random string
+    slug = f"{base_slug}-{timestamp_suffix}-{random_suffix}"
+
     claims_db[slug] = claim
+    search_index.index_claim(slug, claim.text)
     
     return ClaimResponse(claim=claim)
 
@@ -114,10 +163,124 @@ async def add_statcan_evidence(claim_id: str, request: EvidenceRequest):
         evidence_list = await fetch_crime_severity_data()
         claim.evidence.extend(evidence_list)
         claim.updated_at = datetime.utcnow()
+
+        search_index.index_evidence_batch(
+            claim_id,
+            [
+                {
+                    "evidence_id": str(evidence.id),
+                    "snippet": evidence.snippet,
+                    "publisher": evidence.publisher,
+                    "url": evidence.url,
+                }
+                for evidence in evidence_list
+            ],
+        )
         
         return {"status": "success", "evidence_count": len(evidence_list)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch StatCan data: {str(e)}")
+
+
+@app.get("/search", response_model=SearchResponse)
+async def search_claims(q: str = Query(..., min_length=1)):
+    """Search claims and evidence via SQLite FTS."""
+    claim_rows, evidence_rows = search_index.search(q)
+
+    claim_hits = [
+        {
+            "slug": row["slug"],
+            "text": row["text"],
+            "score": float(row["score"]),
+        }
+        for row in claim_rows
+    ]
+
+    evidence_hits = []
+    for row in evidence_rows:
+        evidence_id = row["evidence_id"]
+        try:
+            evidence_uuid = UUID(evidence_id) if evidence_id else None
+        except ValueError:
+            logger.warning("Invalid UUID format for evidence_id: %s", evidence_id)
+            evidence_uuid = None
+
+        if evidence_uuid is None:
+            continue
+
+        evidence_hits.append(
+            {
+                "claim_slug": row["claim_slug"],
+                "evidence_id": evidence_uuid,
+                "snippet": row["snippet"],
+                "publisher": row["publisher"],
+                "url": row["url"],
+                "score": float(row["score"]),
+            }
+        )
+
+    return SearchResponse(query=q, claims=claim_hits, evidence=evidence_hits)
+
+
+@app.post("/claims/{claim_id}/verify", response_model=VerificationResponse)
+async def verify_claim(
+    claim_id: str,
+    time_start: Optional[str] = Query(None),
+    time_end: Optional[str] = Query(None),
+    providers: Optional[List[str]] = Query(None, alias="providers[]"),
+    force: bool = Query(False),
+):
+    """Verify a claim within an optional time window using deterministic cache."""
+
+    claim = get_claim_by_id(claim_id)
+
+    start_dt = parse_datetime_param(time_start, "time_start")
+    end_dt = parse_datetime_param(time_end, "time_end")
+
+    if start_dt and end_dt and start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="time_start must be before time_end")
+
+    selected_providers = providers or DEFAULT_PROVIDERS
+    window = TimeWindow(start=start_dt, end=end_dt)
+
+    evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
+    sources_hash = compute_sources_hash(evidence_in_range)
+    cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
+
+    if not force:
+        cached_record = get_cached_verification(cache_key)
+        if cached_record:
+            return VerificationResponse(
+                verification_id=cached_record.id,
+                cached=True,
+                verdict=cached_record.verdict,
+                created_at=cached_record.created_at,
+                providers=cached_record.providers,
+                evidence_ids=cached_record.evidence_ids,
+                time_window=cached_record.time_window,
+            )
+
+    new_record = create_verification_record(
+        claim=claim,
+        claim_slug=claim_id,
+        evidence=evidence_in_range,
+        providers=selected_providers,
+        time_window=window,
+        sources_hash=sources_hash,
+    )
+
+    store_verification(cache_key, new_record)
+    claim.updated_at = datetime.utcnow()
+
+    return VerificationResponse(
+        verification_id=new_record.id,
+        cached=False,
+        verdict=new_record.verdict,
+        created_at=new_record.created_at,
+        providers=new_record.providers,
+        evidence_ids=new_record.evidence_ids,
+        time_window=new_record.time_window,
+    )
 
 
 @app.post("/claims/{claim_id}/panel/run")

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SearchBar } from "@/components/search-bar";
 import { Search, Bot, Handshake, ArrowRight, Shield, Download } from "lucide-react";
 
 export default function Home() {
@@ -23,6 +24,9 @@ export default function Home() {
               A transparent system for de-escalating dialogue around contentious claims. 
               See the evidence, understand different perspectives, and find common ground.
             </p>
+            <div className="mx-auto mb-12 max-w-2xl">
+              <SearchBar placeholder="Search claims or evidence" />
+            </div>
             <div className="flex flex-col sm:flex-row gap-6 justify-center items-center">
               <Button asChild size="lg" className="px-8 py-4 text-base elegant-hover">
                 <Link href="/claim/violent-crime-in-canada-is-rising" className="flex items-center gap-2">
