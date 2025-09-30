@@ -49,6 +49,7 @@ class ExplorerToolset:
         self, claim_text: str, time_window: Optional[TimeWindow] = None
     ) -> List[Dict[str, Any]]:
         """Return seed results for the claim (static sample)."""
+        # NOTE: claim_text and time_window are intentionally unused in this stub implementation.
         return list(_DEFAULT_SEARCH_RESULTS)
 
     async def fetch_page(self, url: str) -> Dict[str, Any]:
