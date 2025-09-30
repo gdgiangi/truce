@@ -331,25 +331,7 @@ async def verify_claim(
     selected_providers = providers or DEFAULT_PROVIDERS
     window = TimeWindow(start=start_dt, end=end_dt)
 
-    # Check cache first with existing evidence to serve cached results even when explorer is unreachable
-    existing_evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
-    existing_sources_hash = compute_sources_hash(existing_evidence_in_range)
-    existing_cache_key = build_cache_key(claim.text, window, selected_providers, existing_sources_hash)
-
-    if not force:
-        cached_record = get_cached_verification(existing_cache_key)
-        if cached_record:
-            return VerificationResponse(
-                verification_id=cached_record.id,
-                cached=True,
-                verdict=cached_record.verdict,
-                created_at=cached_record.created_at,
-                providers=cached_record.providers,
-                evidence_ids=cached_record.evidence_ids,
-                time_window=cached_record.time_window,
-            )
-
-    # Try to gather new evidence, but don't fail the entire request if explorer is unreachable
+    # Try to gather new evidence first to enable fresh evidence discovery
     new_evidence = []
     try:
         new_evidence = await _gather_and_persist_sources(claim_id, claim, window)
@@ -359,13 +341,13 @@ async def verify_claim(
         logger.warning(f"Explorer agent failed to gather sources for claim {claim_id}: {e}")
         # Continue with existing evidence if explorer fails
 
-    # Recompute cache key with potentially new evidence
+    # Compute cache key with current evidence set (including any newly discovered sources)
     evidence_in_range = filter_evidence_by_time_window(claim.evidence, start_dt, end_dt)
     sources_hash = compute_sources_hash(evidence_in_range)
     cache_key = build_cache_key(claim.text, window, selected_providers, sources_hash)
 
-    # Check cache again with updated evidence (if any new evidence was added)
-    if not force and cache_key != existing_cache_key:
+    # Check cache only after attempting to discover new evidence
+    if not force:
         cached_record = get_cached_verification(cache_key)
         if cached_record:
             return VerificationResponse(
@@ -378,6 +360,7 @@ async def verify_claim(
                 time_window=cached_record.time_window,
             )
 
+    # Create new verification record since no cached version exists
     new_record = create_verification_record(
         claim=claim,
         claim_slug=claim_id,
