@@ -391,8 +391,12 @@ class TestConsensusEndpoints:
         assert "topic" in data
         assert "statement_count" in data
         assert "vote_count" in data
-        # Should have 3 total statements distributed across categories  
-        total_statements = len(data["overall_consensus"]) + len(data["divisive"]) + len(data["unvoted"])
+        # Should have 3 total statements distributed across categories
+        total_statements = (
+            len(data["overall_consensus"])
+            + len(data["divisive"])
+            + len(data["unvoted"])
+        )
         assert total_statements == 3
 
 

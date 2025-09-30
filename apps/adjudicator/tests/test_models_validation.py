@@ -320,11 +320,19 @@ class TestHumanReview:
         """Test notes field validation"""
         # Notes too long
         with pytest.raises(ValidationError):
-            HumanReview(author="expert", verdict=VerdictType.SUPPORTS, notes="x" * 2001, signature_vc=None)
+            HumanReview(
+                author="expert",
+                verdict=VerdictType.SUPPORTS,
+                notes="x" * 2001,
+                signature_vc=None,
+            )
 
         # Valid notes
         review = HumanReview(
-            author="expert", verdict=VerdictType.SUPPORTS, notes="Valid notes", signature_vc=None
+            author="expert",
+            verdict=VerdictType.SUPPORTS,
+            notes="Valid notes",
+            signature_vc=None,
         )
         assert review.notes == "Valid notes"
 

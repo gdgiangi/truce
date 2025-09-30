@@ -219,7 +219,9 @@ async def get_claim(claim_id: str):
 
 
 @app.post("/claims/{claim_id}/evidence:statcan")
-async def add_statcan_evidence(claim_id: str, request: Optional[EvidenceRequest] = None):
+async def add_statcan_evidence(
+    claim_id: str, request: Optional[EvidenceRequest] = None
+):
     """Add Statistics Canada evidence to a claim"""
     claim = get_claim_by_id(claim_id)
 
@@ -255,7 +257,7 @@ async def add_statcan_evidence(claim_id: str, request: Optional[EvidenceRequest]
 async def search_claims(q: str = Query(..., min_length=1)):
     """Search claims and evidence via SQLite FTS."""
     from .models import ClaimSearchHit, EvidenceSearchHit
-    
+
     claim_rows, evidence_rows = search_index.search(q)
 
     claim_hits = [
@@ -556,7 +558,8 @@ async def get_replay_bundle(claim_id: str):
     try:
         bundle = await create_replay_bundle(claim)
         return JSONResponse(
-            content=bundle.model_dump(mode="json"), headers={"Content-Type": "application/json"}
+            content=bundle.model_dump(mode="json"),
+            headers={"Content-Type": "application/json"},
         )
     except Exception as e:
         raise HTTPException(
