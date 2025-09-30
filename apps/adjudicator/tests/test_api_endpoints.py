@@ -10,14 +10,9 @@ from fastapi.testclient import TestClient
 from truce_adjudicator import search_index
 from truce_adjudicator.main import app, claims_db, statements_db, votes_db
 from truce_adjudicator.models import (
-    Claim,
-    ClaimCreate,
-    ConsensusStatement,
     Evidence,
     ModelAssessment,
-    TimeWindow,
     VerdictType,
-    VoteType,
 )
 from truce_adjudicator.verification import reset_cache
 
