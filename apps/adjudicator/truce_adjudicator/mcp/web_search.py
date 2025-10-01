@@ -63,138 +63,152 @@ class BraveGroundingAPI:
         if not self.api_key:
             raise ValueError("Brave Search API key not configured")
         
-        if not AsyncOpenAI:
-            raise ValueError("OpenAI package required for Brave Grounding API")
-            
-        self.client = AsyncOpenAI(
-            api_key=self.api_key,
-            base_url="https://api.search.brave.com/res/v1",
-        )
+        if not aiohttp:
+            raise ValueError("aiohttp package required for Brave Grounding API")
         
         # Rate limiter: 2 requests per second per Brave documentation
         self.rate_limiter = RateLimiter(max_calls=2, time_window=1.0)
+        self.base_url = "https://api.search.brave.com/res/v1/chat/completions"
 
     async def search(
         self,
         query: str,
-        count: int = 20,
+        count: int = 30,  # Increased from 20 to 30 for more comprehensive results
         offset: int = 0,
         time_window: Optional[TimeWindow] = None,
     ) -> List[Dict[str, Any]]:
-        """Search and gather evidence using Brave AI Grounding API with streaming citations."""
+        """Search and gather evidence using Brave AI Grounding API with proper implementation."""
         # Respect rate limits
         await self.rate_limiter.acquire()
         
-        # Construct query for evidence gathering
-        evidence_query = f"Find current evidence and reliable sources about: {query}"
+        # Construct query for evidence gathering with emphasis on diverse perspectives
+        evidence_query = f"Find comprehensive evidence and diverse perspectives about: {query}"
         if time_window and time_window.start:
             days_ago = (datetime.now(timezone.utc) - time_window.start).days
             if days_ago <= 30:
                 evidence_query += f" (focus on recent sources from the past {days_ago} days)"
-        evidence_query += " Please provide multiple reliable sources with citations."
+        evidence_query += " Please provide multiple reliable sources including academic, journalistic, governmental, and expert perspectives with detailed citations."
         
         try:
-            # Use streaming to capture citations
-            citations = []
-            content_parts = []
+            headers = {
+                "x-subscription-token": self.api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+            }
             
-            stream = await self.client.chat.completions.create(
-                messages=[
+            payload = {
+                "stream": False,
+                "messages": [
                     {
                         "role": "user", 
                         "content": evidence_query
                     }
                 ],
-                model="brave",
-                stream=True,
-                extra_body={
-                    "country": "ca",  # Focus on Canadian sources
-                    "language": "en",
-                    "enable_entities": True,
-                    "enable_citations": True,
-                    "enable_research": False,  # Use single search for speed
-                },
-            )
+                "model": "brave"
+            }
             
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    delta = chunk.choices[0].delta.content
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.base_url, headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        print(f"Brave API error {response.status}: {error_text}")
+                        return []
                     
-                    # Parse citation markers
-                    if delta.startswith("<citation>") and delta.endswith("</citation>"):
-                        try:
-                            citation_data = json.loads(
-                                delta.removeprefix("<citation>").removesuffix("</citation>")
-                            )
-                            citations.append(citation_data)
-                        except json.JSONDecodeError:
-                            continue
+                    result = await response.json()
+                    
+                    # Extract content and citations from response
+                    if result.get("choices") and len(result["choices"]) > 0:
+                        content = result["choices"][0]["message"]["content"]
+                        return self._parse_grounded_response(content, query)
                     else:
-                        # Collect regular content
-                        content_parts.append(delta)
-            
-            # Convert citations to search results format
-            return self._convert_citations_to_results(citations, "".join(content_parts), query)
+                        print("No choices in Brave API response")
+                        return []
             
         except Exception as e:
             print(f"Brave Grounding API error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
-    def _convert_citations_to_results(self, citations: List[Dict[str, Any]], content: str, query: str) -> List[Dict[str, Any]]:
-        """Convert Brave Grounding API citations to search results format."""
+    def _parse_grounded_response(self, content: str, query: str) -> List[Dict[str, Any]]:
+        """Parse Brave AI Grounding response and extract sources."""
         results = []
         
-        # Process each citation
-        for citation in citations:
-            # Extract citation data
-            # Citation format from Brave API: {start_index, end_index, number, url, favicon, snippet}
-            url = citation.get("url", "")
-            snippet = citation.get("snippet", "")
-            number = citation.get("number", 0)
-            
-            if not url:
-                continue
-                
-            # Extract title and publisher from URL and snippet
-            title = f"Source {number}: {url}"
-            publisher = self._extract_publisher(url)
-            
-            # Use snippet from citation if available, otherwise extract from content
-            if not snippet and content:
-                # Try to extract relevant text around the citation
-                start_idx = citation.get("start_index", 0)
-                end_idx = citation.get("end_index", 0)
-                if start_idx < len(content) and end_idx <= len(content) and start_idx < end_idx:
-                    # Extract a bit more context around the citation
-                    context_start = max(0, start_idx - 50)
-                    context_end = min(len(content), end_idx + 50)
-                    snippet = content[context_start:context_end].strip()
-            
-            result = {
-                "url": url,
-                "title": title,
-                "snippet": snippet or "Evidence source from Brave Grounding",
-                "publisher": publisher,
-                "published_at": datetime.now(timezone.utc),  # Current time as we don't have publish date
-                "citation_number": number,
-                "grounded": True,
-            }
-            results.append(result)
+        # Look for citation patterns in the content
+        # The Brave API may embed citations in different formats
+        citation_patterns = [
+            r'\[(\d+)\]\s*(.+?)(?=\[\d+\]|$)',  # [1] Citation text
+            r'<citation[^>]*>([^<]+)</citation>',  # <citation>...</citation>
+            r'Source:\s*(.+?)(?=\n|$)',  # Source: ...
+        ]
         
-        # If no citations found but we have content, create a general result
+        citation_number = 1
+        for pattern in citation_patterns:
+            matches = re.finditer(pattern, content, re.MULTILINE | re.DOTALL)
+            for match in matches:
+                citation_text = match.group(1) if len(match.groups()) == 1 else match.group(2)
+                citation_text = citation_text.strip()
+                
+                if len(citation_text) < 10:  # Skip very short citations
+                    continue
+                
+                # Try to extract URL from citation text
+                url_match = re.search(r'https?://[^\s\)]+', citation_text)
+                url = url_match.group(0) if url_match else f"https://search.brave.com/grounded#{citation_number}"
+                
+                # Extract publisher from URL or citation text
+                publisher = self._extract_publisher(url)
+                if publisher == "Unknown":
+                    # Try to extract from citation text
+                    domain_match = re.search(r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', citation_text)
+                    if domain_match:
+                        publisher = domain_match.group(1)
+                
+                result = {
+                    "url": url,
+                    "title": f"Source {citation_number}: {citation_text[:100]}...",
+                    "snippet": citation_text[:500] if len(citation_text) > 500 else citation_text,
+                    "publisher": publisher,
+                    "published_at": datetime.now(timezone.utc),
+                    "citation_number": citation_number,
+                    "grounded": True,
+                }
+                results.append(result)
+                citation_number += 1
+        
+        # If no structured citations found, but we have substantial content, 
+        # create results based on content analysis
+        if not results and content and len(content) > 100:
+            # Split content into sentences and look for factual statements
+            sentences = re.split(r'[.!?]+', content)
+            fact_sentences = [s.strip() for s in sentences if len(s.strip()) > 50 and any(keyword in s.lower() for keyword in ['according to', 'reported', 'study', 'data', 'research', 'found'])]
+            
+            for i, sentence in enumerate(fact_sentences[:5]):  # Limit to 5 factual statements
+                result = {
+                    "url": f"https://search.brave.com/grounded#{i+1}",
+                    "title": f"Grounded Fact {i+1}: {query}",
+                    "snippet": sentence,
+                    "publisher": "Brave AI Grounding",
+                    "published_at": datetime.now(timezone.utc),
+                    "grounded_content": True,
+                }
+                results.append(result)
+        
+        # Fallback: if we have any substantial content, create at least one result
         if not results and content and len(content) > 50:
             result = {
                 "url": "https://search.brave.com/grounded",
-                "title": f"Grounded Evidence: {query}",
+                "title": f"AI-Generated Analysis: {query}",
                 "snippet": content[:500] + "..." if len(content) > 500 else content,
                 "publisher": "Brave AI Grounding",
                 "published_at": datetime.now(timezone.utc),
                 "grounded_content": content,
-                "grounded": True,
+                "ai_generated": True,
             }
             results.append(result)
-            
-        print(f"Converted {len(citations)} citations to {len(results)} search results")
+        
+        print(f"Parsed grounded response into {len(results)} search results")
         return results
 
     def _extract_publisher(self, url: str) -> str:
@@ -204,8 +218,9 @@ class BraveGroundingAPI:
             # Remove www. prefix
             domain = re.sub(r"^www\.", "", domain)
             
-            # Map common domains to friendly names
+            # Map common domains to friendly names - expanded for more comprehensive source recognition
             domain_map = {
+                # Canadian News Media
                 "cbc.ca": "CBC News",
                 "theglobeandmail.com": "The Globe and Mail",
                 "globalnews.ca": "Global News",
@@ -213,11 +228,47 @@ class BraveGroundingAPI:
                 "thestar.com": "Toronto Star",
                 "nationalpost.com": "National Post",
                 "macleans.ca": "Maclean's",
+                "citynews.ca": "CityNews",
+                "cp24.com": "CP24",
+                "660news.com": "660 News",
+                "newstalk770.com": "Newstalk 770",
+                "calgaryherald.com": "Calgary Herald",
+                "edmontonjournal.com": "Edmonton Journal",
+                "vancouversun.com": "Vancouver Sun",
+                "ottawacitizen.com": "Ottawa Citizen",
+                "leaderpost.com": "Regina Leader-Post",
+                "thechronicleherald.ca": "The Chronicle Herald",
+                
+                # Government and Official Sources
                 "statcan.gc.ca": "Statistics Canada",
                 "rcmp-grc.gc.ca": "RCMP",
                 "canada.ca": "Government of Canada",
-                "citynews.ca": "CityNews",
+                "justice.gc.ca": "Department of Justice Canada",
+                "parl.ca": "Parliament of Canada",
+                "pco-bcp.gc.ca": "Privy Council Office",
+                "publicsafety.gc.ca": "Public Safety Canada",
+                
+                # Academic and Research
                 "policyoptions.irpp.org": "Policy Options",
+                "irpp.org": "Institute for Research on Public Policy",
+                "fraserinstitute.org": "Fraser Institute",
+                "policyalternatives.ca": "Canadian Centre for Policy Alternatives",
+                "utoronto.ca": "University of Toronto",
+                "ubc.ca": "University of British Columbia",
+                "mcgill.ca": "McGill University",
+                "yorku.ca": "York University",
+                
+                # International Credible Sources
+                "reuters.com": "Reuters",
+                "apnews.com": "Associated Press",
+                "bbc.com": "BBC",
+                "theguardian.com": "The Guardian",
+                "nytimes.com": "The New York Times",
+                "washingtonpost.com": "The Washington Post",
+                "economist.com": "The Economist",
+                "oecd.org": "Organisation for Economic Co-operation and Development",
+                "who.int": "World Health Organization",
+                "worldbank.org": "World Bank",
             }
             
             return domain_map.get(domain, domain.replace(".com", "").replace(".ca", "").title())

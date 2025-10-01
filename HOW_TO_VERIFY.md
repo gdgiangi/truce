@@ -25,12 +25,18 @@
    npm run dev
    ```
 2. Visit `http://localhost:3000`:
-   - Use the hero search bar to query “crime severity” and confirm claim/evidence hits surface via `/search`.
-3. Navigate to `/claim/violent-crime-in-canada-is-rising`:
-   - Adjust the start/end date pickers and watch the verification controls re-run automatically.
-   - Toggle “Refresh with latest” to force bypassing cache (`cached: false` should appear in the response before returning to cached on the next run).
-   - Confirm the provider checkboxes update the `providers[]` query params in the network tab.
-   - After a verify run, open the “Evidence & Sources” list and scroll to the latest entries — new items should show `provenance: mcp-explorer`, include titles, and reflect the current timestamp.
+   - Use the hero search bar to enter any claim (e.g., "crime severity in Canada").
+   - Click "Search" — you should be immediately redirected to the `/analyzing` page with a minimalistic loading screen.
+   - Watch the progress indicators and animations as the system:
+     * Searches for evidence
+     * Gathers and processes sources
+     * Evaluates with AI models
+   - Upon completion, you'll be automatically redirected to the claim page (e.g., `/claim/crime-severity-in-canada`).
+3. On the claim page (`/claim/[slug]`):
+   - Verify that the "Evidence & Sources" section displays all gathered evidence with proper citations.
+   - Confirm the "Model Panel Evaluation" section shows detailed verdicts from each AI model with confidence levels and rationale.
+   - Check the sidebar "Model Consensus" widget displays the verdict distribution and support score.
+   - Note: The old verification controls have been removed for a cleaner, streamlined experience. Each search creates a fresh analysis.
 4. Trigger the multi-model panel aggregation:
    ```bash
    curl -s -X POST \

@@ -4,14 +4,15 @@ This guide explains how to configure API keys for Truce's AI model panel and web
 
 ## Required API Keys
 
-### 1. Brave Search API (For Evidence Gathering)
+### 1. Brave AI Grounding API (For Evidence Gathering)
 
-The Brave Search API is used to gather evidence from the web for claim analysis.
+The Brave AI Grounding API is used to gather evidence from the web for claim analysis using AI-powered search with verifiable citations.
 
 **Get your API key:**
-1. Visit [Brave Search API](https://brave.com/search/api/)
-2. Sign up for an account
-3. Get your API key from the dashboard
+1. Visit [Brave Search API Dashboard](https://api-dashboard.search.brave.com/)
+2. Sign up for an account 
+3. Subscribe to the **AI Grounding** plan (required for the grounding endpoint)
+4. Get your API key from the dashboard
 
 **Configure:**
 Add to your `.env` file:
@@ -19,7 +20,13 @@ Add to your `.env` file:
 BRAVE_SEARCH_API_KEY=your_brave_api_key_here
 ```
 
-**Note:** Without this key, evidence gathering will be disabled and claims will have no supporting evidence.
+**Important Notes:**
+- **AI Grounding subscription required** - The regular search API won't work
+- Without this key configured, you'll see "0 evidence found" and agent errors
+- The API provides 2 requests per second rate limit
+- Uses endpoint: `https://api.search.brave.com/res/v1/chat/completions`
+
+**Reference:** [Brave AI Grounding Documentation](https://api-dashboard.search.brave.com/app/documentation/ai-grounding/get-started)
 
 ---
 
@@ -93,7 +100,7 @@ ANTHROPIC_API_KEY=sk-ant-your_anthropic_api_key_here
 ```
 
 **Models used:**
-- `claude-3-5-sonnet-20241022` - Latest Claude 3.5 Sonnet
+- `claude-sonnet-4-20250514` - Latest Claude Sonnet 4 (enhanced capabilities)
 
 ---
 

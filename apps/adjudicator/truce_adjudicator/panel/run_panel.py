@@ -40,7 +40,7 @@ DEFAULT_PANEL_MODELS: List[str] = [
     "gpt-4o",  # OpenAI's latest model (was gpt-5 which doesn't exist)
     "grok-3",  # xAI's latest (grok-beta deprecated Sept 2025)
     "gemini-2.0-flash-exp",  # Google's latest Gemini
-    "claude-3-5-sonnet-20241022",  # Anthropic's latest Claude
+    "claude-sonnet-4-20250514",  # Anthropic's latest Claude Sonnet 4
 ]
 
 SYSTEM_PROMPT = """You are an objective fact-checking assistant. Respond **only** with a JSON object matching:

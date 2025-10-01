@@ -110,6 +110,22 @@ async def emit_progress(session_id: str, stage: str, message: str, details: Opti
         logger.warning(f"No progress stream found for session {session_id}")
 
 
+async def emit_agent_update(session_id: str, agent_name: str, action: str, reasoning: str = "", search_strategy: str = "", sources_found: List[str] = None, error: str = None):
+    """Emit detailed agent activity updates."""
+    details = {
+        "agent_name": agent_name,
+        "reasoning": reasoning,
+        "search_strategy": search_strategy,
+        "sources_found": sources_found or [],
+    }
+    
+    if error:
+        details["error_message"] = error
+        await emit_progress(session_id, "error", action, details)
+    else:
+        await emit_progress(session_id, "agent_activity", action, details)
+
+
 async def generate_progress_stream(session_id: str) -> AsyncGenerator[str, None]:
     """Generate SSE stream for claim creation progress"""
     try:
@@ -181,11 +197,8 @@ async def _gather_and_persist_sources(
     logger.info(f"Starting evidence gathering for claim: {claim.text}")
     
     try:
-        # Add timeout for evidence gathering (20 seconds for faster UX)
-        gathered_sources = await asyncio.wait_for(
-            explorer_agent.gather_sources(claim.text, window),
-            timeout=20.0
-        )
+        # Comprehensive evidence gathering without timeout - let it take the time needed
+        gathered_sources = await explorer_agent.gather_sources(claim.text, window, session_id)
         logger.info(f"Evidence gathering completed. Found {len(gathered_sources)} sources")
         
         if session_id and gathered_sources:
@@ -195,11 +208,6 @@ async def _gather_and_persist_sources(
                 f"Processing {len(gathered_sources)} sources...",
                 {"raw_sources": len(gathered_sources)}
             )
-    except asyncio.TimeoutError:
-        logger.warning(f"Evidence gathering timed out for claim: {claim.text}")
-        if session_id:
-            await emit_progress(session_id, "timeout_warning", "Evidence gathering took too long, continuing with available data...")
-        gathered_sources = []
     except Exception as e:
         logger.error(f"Error during evidence gathering: {e}")
         if session_id:

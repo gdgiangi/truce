@@ -51,22 +51,65 @@ class ExplorerToolset:
         self.content_extractor = get_content_extractor()
 
     async def search_web(
-        self, claim_text: str, time_window: Optional[TimeWindow] = None
+        self, claim_text: str, time_window: Optional[TimeWindow] = None, session_id: Optional[str] = None, strategy: str = "direct"
     ) -> List[Dict[str, Any]]:
-        """Search the web for sources related to the claim."""
+        """Search the web for sources related to the claim with agent reporting."""
         if not self.search_api:
-            # No API configured - return empty results instead of unrelated fallback
-            print("Web search API not available, no evidence will be gathered")
-            print("Please configure BRAVE_SEARCH_API_KEY to enable web search")
+            # No API configured - report error but don't fail completely
+            error_msg = "Web search API not configured. Please set BRAVE_SEARCH_API_KEY environment variable."
+            print(error_msg)
+            if session_id:
+                from ..main import emit_agent_update
+                await emit_agent_update(session_id, "Search Agent", f"Search API unavailable for {strategy} strategy", 
+                                      "Configuration missing but continuing with other strategies", strategy, [], error_msg)
             return []
         
         try:
+            if session_id:
+                from ..main import emit_agent_update
+                await emit_agent_update(
+                    session_id, 
+                    "Search Agent", 
+                    f"Starting {strategy} search for evidence", 
+                    f"Querying web sources using {strategy} strategy for: {claim_text}",
+                    strategy
+                )
+            
             results = await self.search_api.search(claim_text, count=15, time_window=time_window)
+            
+            if session_id:
+                if results:
+                    source_domains = [result.get('publisher', 'Unknown') for result in results[:3]]
+                    await emit_agent_update(
+                        session_id, 
+                        "Search Agent", 
+                        f"Found {len(results)} sources via {strategy} search", 
+                        f"Successfully retrieved sources from diverse domains: {', '.join(source_domains)}",
+                        strategy,
+                        source_domains
+                    )
+                else:
+                    # Don't report as error - just informational
+                    await emit_agent_update(
+                        session_id, 
+                        "Search Agent", 
+                        f"No results from {strategy} search", 
+                        f"Search query returned no results for {strategy} strategy. Continuing with other strategies.",
+                        strategy,
+                        []
+                    )
+            
             if not results:
-                print(f"Web search returned no results for: {claim_text}")
+                print(f"Web search returned no results for: {claim_text} ({strategy})")
             return results
         except Exception as e:
-            print(f"Web search failed: {e}")
+            error_msg = f"Web search failed: {str(e)}"
+            print(error_msg)
+            if session_id:
+                from ..main import emit_agent_update
+                # Don't classify as critical error - just report issue
+                await emit_agent_update(session_id, "Search Agent", f"Search issue in {strategy} strategy", 
+                                      f"Encountered technical issue but continuing with other strategies: {str(e)}", strategy, [])
             return []
 
     async def fetch_page(self, url: str) -> Dict[str, Any]:
@@ -137,20 +180,21 @@ class ExplorerAgent:
     def __init__(
         self,
         tools: Optional[ExplorerToolset] = None,
-        target_count: int = 8,
-        domain_share: float = 0.4,
+        target_count: int = 20,  # Increased from 8 to 20 for more comprehensive evidence
+        domain_share: float = 0.25,  # Reduced from 0.4 to 0.25 for more diverse sources
     ) -> None:
         self.tools = tools or ExplorerToolset()
         self.target_count = target_count
         self.domain_share = domain_share
 
     async def gather_sources(
-        self, claim_text: str, time_window: Optional[TimeWindow] = None
+        self, claim_text: str, time_window: Optional[TimeWindow] = None, session_id: Optional[str] = None
     ) -> List[ExplorerSource]:
-        """Gather, deduplicate, and diversify sources for a claim."""
-        search_results = await self.tools.search_web(claim_text, time_window)
+        """Gather, deduplicate, and diversify sources for a claim using multiple search strategies."""
         candidates: List[Dict[str, Any]] = []
-
+        
+        # Strategy 1: Direct claim search
+        search_results = await self.tools.search_web(claim_text, time_window, session_id, "direct")
         for result in search_results:
             enriched = await self.tools.fetch_page(result.get("url", ""))
             # Only merge enriched data if it provides actual content
@@ -165,10 +209,44 @@ class ExplorerAgent:
             if enriched.get("published_at"):
                 merged["published_at"] = enriched["published_at"]
             
+            merged["search_strategy"] = "direct"
             candidates.append(merged)
             expansions = await self.tools.expand_links(result.get("url", ""))
             if expansions:
                 candidates.extend(expansions)
+        
+        # Strategy 2: Academic and research perspective
+        academic_query = f"research study analysis {claim_text}"
+        academic_results = await self.tools.search_web(academic_query, time_window, session_id, "academic")
+        for result in academic_results[:10]:  # Limit to prevent too many results
+            result["search_strategy"] = "academic"
+            candidates.append(result)
+        
+        # Strategy 3: Government and official sources
+        gov_query = f"government official statistics {claim_text}"
+        gov_results = await self.tools.search_web(gov_query, time_window, session_id, "government")
+        for result in gov_results[:10]:
+            result["search_strategy"] = "government"
+            candidates.append(result)
+        
+        # Strategy 4: News and journalistic coverage
+        news_query = f"news report investigation {claim_text}"
+        news_results = await self.tools.search_web(news_query, time_window, session_id, "news")
+        for result in news_results[:10]:
+            result["search_strategy"] = "news"
+            candidates.append(result)
+
+        # Final processing and summary
+        if session_id:
+            from ..main import emit_agent_update
+            await emit_agent_update(
+                session_id, 
+                "Evidence Coordinator", 
+                f"Consolidating {len(candidates)} sources from all agents", 
+                f"Deduplicating and diversifying evidence from {len(set(c.get('search_strategy', 'unknown') for c in candidates))} different search strategies",
+                "consolidation",
+                []
+            )
 
         deduped = await self.tools.deduplicate_sources(candidates)
         explorer_sources = [self._build_source(item) for item in deduped]
@@ -176,7 +254,19 @@ class ExplorerAgent:
         window = time_window or TimeWindow()
         filtered = self._apply_time_window(explorer_sources, window)
         diversified = self._enforce_domain_diversity(filtered, self.target_count)
-        return diversified[: self.target_count]
+        final_sources = diversified[: self.target_count]
+        
+        if session_id:
+            await emit_agent_update(
+                session_id, 
+                "Evidence Coordinator", 
+                f"Evidence gathering complete: {len(final_sources)} diverse sources collected", 
+                f"Successfully coordinated {len(set(c.get('search_strategy', 'unknown') for c in candidates))} search agents to gather comprehensive evidence",
+                "complete",
+                [source.publisher for source in final_sources[:3]]
+            )
+        
+        return final_sources
 
     def _apply_time_window(
         self, sources: Sequence[ExplorerSource], window: TimeWindow

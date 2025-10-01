@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { ExternalLink, Download, Shield, AlertTriangle, BarChart3, Bot } from "lucide-react";
 import { ProviderLogo } from "@/components/provider-logo";
-import { ClaimVerifier } from "@/components/claim-verifier";
 
 type PanelVerdictValue = "true" | "false" | "mixed" | "unknown";
 
@@ -75,7 +74,6 @@ interface ClaimResponse {
 }
 
 const adjudicatorUrl = process.env.ADJUDICATOR_API_URL || "http://localhost:8000";
-const DEFAULT_PROVIDERS = ["gpt-5", "claude-sonnet-4-20250514"];
 
 async function getClaim(slug: string): Promise<ClaimResponse | null> {
   try {
@@ -304,14 +302,6 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
             <span>Evidence: {claim.evidence.length} sources</span>
             <span>Models: {modelCount} evaluations</span>
           </div>
-        </div>
-
-        <div className="mb-8">
-          <ClaimVerifier
-            slug={params.slug}
-            adjudicatorUrl={adjudicatorUrl}
-            defaultProviders={DEFAULT_PROVIDERS}
-          />
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
