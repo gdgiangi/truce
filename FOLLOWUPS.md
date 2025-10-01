@@ -6,3 +6,5 @@
 - Wire the MCP explorer to live tool backends (web search, link expansion) and add configuration for API keys / rate limits once available.
 - Move explorer-gathered evidence into durable storage (SQLite/Postgres) with provenance audit logs rather than in-memory claim structs.
 - Surface domain diversity diagnostics in the UI so reviewers know when sources were dropped due to concentration limits.
+- Replace the stubbed Grok/Gemini/Sonnet adapters with real client integrations once API credentials are provisioned and confirm JSON contract parity across providers.
+- Add a front-end action to trigger `/claims/{slug}/panel/run` from the claim page so reviewers can refresh model verdicts without manual curls.

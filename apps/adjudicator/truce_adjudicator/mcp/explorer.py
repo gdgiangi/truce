@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from ..models import Evidence, TimeWindow
+from .web_search import get_brave_search, get_content_extractor
 
 
 @dataclass
@@ -43,36 +44,59 @@ class ExplorerSource:
 
 
 class ExplorerToolset:
-    """Minimal MCP toolset stubs used by the explorer agent."""
+    """Real MCP toolset for web search and content extraction."""
+
+    def __init__(self):
+        self.search_api = get_brave_search()
+        self.content_extractor = get_content_extractor()
 
     async def search_web(
         self, claim_text: str, time_window: Optional[TimeWindow] = None
     ) -> List[Dict[str, Any]]:
-        """Return seed results for the claim (static sample)."""
-        # NOTE: claim_text and time_window are intentionally unused in this stub implementation.
-        return list(_DEFAULT_SEARCH_RESULTS)
+        """Search the web for sources related to the claim."""
+        if not self.search_api:
+            # No API configured - return empty results instead of unrelated fallback
+            print("Web search API not available, no evidence will be gathered")
+            print("Please configure BRAVE_SEARCH_API_KEY to enable web search")
+            return []
+        
+        try:
+            results = await self.search_api.search(claim_text, count=15, time_window=time_window)
+            if not results:
+                print(f"Web search returned no results for: {claim_text}")
+            return results
+        except Exception as e:
+            print(f"Web search failed: {e}")
+            return []
 
     async def fetch_page(self, url: str) -> Dict[str, Any]:
-        """Fetch metadata for a URL (static enrichment)."""
-        entry = next(
-            (item for item in _DEFAULT_SEARCH_RESULTS if item["url"] == url), None
-        )
-        if entry:
+        """Fetch and extract content from a web page."""
+        if not self.content_extractor:
             return {
-                "snippet": entry["snippet"],
-                "publisher": entry["publisher"],
-                "title": entry["title"],
-                "published_at": entry.get("published_at"),
+                "snippet": "Content extraction not available.",
+                "publisher": "Unknown",
+                "title": url,
+                "published_at": None,
             }
-        return {
-            "snippet": "Summary unavailable.",
-            "publisher": "Unknown",
-            "title": url,
-            "published_at": None,
-        }
+        
+        try:
+            content = await self.content_extractor.fetch_page_content(url)
+            return content
+        except Exception as e:
+            print(f"Page fetch failed for {url}: {e}")
+            return {
+                "snippet": "Content extraction failed.",
+                "publisher": "Unknown",
+                "title": url,
+                "published_at": None,
+            }
 
     async def expand_links(self, url: str) -> List[Dict[str, Any]]:
-        """Expand a URL into related resources (empty stub by default)."""
+        """Expand a URL into related resources (limited implementation)."""
+        # For now, return empty list. This could be extended with:
+        # - RSS feed discovery
+        # - Related article extraction
+        # - Social media post expansion
         return []
 
     async def deduplicate_sources(
@@ -129,7 +153,18 @@ class ExplorerAgent:
 
         for result in search_results:
             enriched = await self.tools.fetch_page(result.get("url", ""))
-            merged = {**result, **enriched}
+            # Only merge enriched data if it provides actual content
+            # Preserve original search result data if enrichment returns fallback values
+            merged = dict(result)  # Start with original data
+            if enriched.get("snippet") and enriched["snippet"] != "Content available at source.":
+                merged["snippet"] = enriched["snippet"]
+            if enriched.get("publisher") and enriched["publisher"] != "Unknown":
+                merged["publisher"] = enriched["publisher"]
+            if enriched.get("title") and enriched["title"] != result.get("url"):
+                merged["title"] = enriched["title"]
+            if enriched.get("published_at"):
+                merged["published_at"] = enriched["published_at"]
+            
             candidates.append(merged)
             expansions = await self.tools.expand_links(result.get("url", ""))
             if expansions:
@@ -198,6 +233,8 @@ class ExplorerAgent:
                 retrieved_at = datetime.fromisoformat(retrieved_at)
             except ValueError:
                 retrieved_at = datetime.utcnow()
+        elif retrieved_at is None:
+            retrieved_at = datetime.utcnow()
 
         normalized_url = item.get("normalized_url") or normalize_url(
             item.get("url", "")

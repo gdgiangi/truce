@@ -71,12 +71,39 @@ make clean      # Clean up
 
 ## Configuration
 
-Copy `env.example` to `.env` and configure:
+⚠️ **Important:** Without API keys, the system will show stub responses and no evidence.
+
+### Quick Setup (2 minutes)
+
+1. Get a **Brave Search API key** (required for evidence): https://brave.com/search/api/
+2. Get at least **one AI API key**:
+   - OpenAI: https://platform.openai.com/api-keys
+   - Anthropic: https://console.anthropic.com/
+   - Google Gemini: https://makersuite.google.com/app/apikey
+   - xAI Grok: https://console.x.ai/
+
+3. Configure:
+```bash
+cp env.example apps/adjudicator/.env
+# Edit apps/adjudicator/.env with your keys
+make down && make up
+```
+
+📚 **See detailed guides:**
+- [QUICK_START.md](./QUICK_START.md) - Get running with real AI in 5 minutes
+- [API_SETUP.md](./API_SETUP.md) - Comprehensive API configuration guide
+
+### Example Configuration
 
 ```bash
-# Required for model panel
+# Required for evidence gathering
+BRAVE_SEARCH_API_KEY=your_brave_key
+
+# AI Model APIs (at least one required)
 OPENAI_API_KEY=your_key_here
 ANTHROPIC_API_KEY=your_key_here
+XAI_API_KEY=your_key_here
+GOOGLE_API_KEY=your_key_here
 
 # Optional: W3C Verifiable Credentials
 VC_ISSUER_DID=did:key:...

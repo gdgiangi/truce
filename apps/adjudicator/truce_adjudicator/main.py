@@ -1,15 +1,16 @@
 """Main FastAPI application for Truce Adjudicator"""
 
+import asyncio
 import json
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import AsyncGenerator, Dict, List, Optional, Set
 from uuid import UUID, uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from . import search_index
 from .mcp import ExplorerAgent
@@ -40,6 +41,11 @@ from .verification import (
     get_cached_verification,
     store_verification,
 )
+from .panel.run_panel import (
+    DEFAULT_PANEL_MODELS,
+    panel_result_to_assessments,
+    run_panel_evaluation,
+)
 
 explorer_agent = ExplorerAgent()
 
@@ -51,6 +57,10 @@ logger = logging.getLogger(__name__)
 claims_db: Dict[str, Claim] = {}
 statements_db: Dict[str, List[ConsensusStatement]] = {}
 votes_db: List[Vote] = []
+
+# Progress tracking for claim creation
+progress_streams: Dict[str, asyncio.Queue] = {}
+cancelled_sessions: Set[str] = set()
 
 app = FastAPI(
     title="Truce Adjudicator",
@@ -82,6 +92,63 @@ def generate_slug(text: str) -> str:
     return slug[:80]
 
 
+async def emit_progress(session_id: str, stage: str, message: str, details: Optional[Dict] = None):
+    """Emit a progress update to the session's SSE stream"""
+    if session_id in progress_streams:
+        event_data = {
+            "stage": stage,
+            "message": message,
+            "timestamp": datetime.utcnow().isoformat(),
+            **(details or {})
+        }
+        try:
+            await progress_streams[session_id].put(event_data)
+            logger.info(f"Progress emitted for session {session_id}: {stage} - {message}")
+        except Exception as e:
+            logger.warning(f"Failed to emit progress for session {session_id}: {e}")
+    else:
+        logger.warning(f"No progress stream found for session {session_id}")
+
+
+async def generate_progress_stream(session_id: str) -> AsyncGenerator[str, None]:
+    """Generate SSE stream for claim creation progress"""
+    try:
+        # Use existing queue or create a new one
+        if session_id not in progress_streams:
+            progress_streams[session_id] = asyncio.Queue()
+        
+        logger.info(f"Starting SSE stream for session {session_id}")
+        
+        while True:
+            try:
+                # Wait for progress updates with timeout
+                event_data = await asyncio.wait_for(
+                    progress_streams[session_id].get(), 
+                    timeout=30.0
+                )
+                
+                # Format as SSE event
+                yield f"data: {json.dumps(event_data)}\n\n"
+                logger.info(f"SSE sent for session {session_id}: {event_data.get('stage')}")
+                
+                # Check if this is the completion event
+                if event_data.get("stage") in ["complete", "error", "cancelled"]:
+                    break
+                    
+            except asyncio.TimeoutError:
+                # Send keepalive
+                yield f"data: {json.dumps({'stage': 'keepalive', 'message': 'Connection active'})}\n\n"
+                
+    except Exception as e:
+        logger.error(f"Error in progress stream for session {session_id}: {e}")
+        yield f"data: {json.dumps({'stage': 'error', 'message': 'Stream error occurred'})}\n\n"
+    finally:
+        # Clean up the session
+        if session_id in progress_streams:
+            del progress_streams[session_id]
+            logger.info(f"Cleaned up session {session_id}")
+
+
 def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[datetime]:
     """Parse ISO8601 query parameters into datetime objects.
 
@@ -104,11 +171,41 @@ def parse_datetime_param(value: Optional[str], field_name: str) -> Optional[date
 
 
 async def _gather_and_persist_sources(
-    claim_slug: str, claim: Claim, window: TimeWindow
+    claim_slug: str, claim: Claim, window: TimeWindow, session_id: Optional[str] = None
 ) -> List[Evidence]:
     """Gather explorer sources, deduplicate them, and persist as evidence."""
 
-    gathered_sources = await explorer_agent.gather_sources(claim.text, window)
+    if session_id:
+        await emit_progress(session_id, "gathering_sources", "Contacting data sources...")
+
+    logger.info(f"Starting evidence gathering for claim: {claim.text}")
+    
+    try:
+        # Add timeout for evidence gathering (20 seconds for faster UX)
+        gathered_sources = await asyncio.wait_for(
+            explorer_agent.gather_sources(claim.text, window),
+            timeout=20.0
+        )
+        logger.info(f"Evidence gathering completed. Found {len(gathered_sources)} sources")
+        
+        if session_id and gathered_sources:
+            await emit_progress(
+                session_id, 
+                "processing_sources", 
+                f"Processing {len(gathered_sources)} sources...",
+                {"raw_sources": len(gathered_sources)}
+            )
+    except asyncio.TimeoutError:
+        logger.warning(f"Evidence gathering timed out for claim: {claim.text}")
+        if session_id:
+            await emit_progress(session_id, "timeout_warning", "Evidence gathering took too long, continuing with available data...")
+        gathered_sources = []
+    except Exception as e:
+        logger.error(f"Error during evidence gathering: {e}")
+        if session_id:
+            await emit_progress(session_id, "api_error", "Some data sources unavailable, continuing with partial results...")
+        gathered_sources = []
+    
     if not gathered_sources:
         return []
     # Build deduplication sets from all existing evidence, not just those with snippets
@@ -122,8 +219,10 @@ async def _gather_and_persist_sources(
     }
 
     new_evidence: List[Evidence] = []
+    total_sources = len(gathered_sources)
+    processed_count = 0
 
-    for source in gathered_sources:
+    for i, source in enumerate(gathered_sources):
         normalized_url = source.normalized_url or normalize_url(source.url)
         content_hash = source.content_hash
 
@@ -143,6 +242,26 @@ async def _gather_and_persist_sources(
         if evidence.content_hash:
             existing_hashes.add(evidence.content_hash)
 
+        processed_count += 1
+        
+        # Check for cancellation during processing
+        check_cancellation(session_id)
+        
+        # Emit granular progress every 5 sources or at milestones
+        if session_id and (processed_count % 5 == 0 or processed_count == total_sources):
+            progress_pct = int((i + 1) / total_sources * 100)
+            await emit_progress(
+                session_id,
+                "processing_evidence",
+                f"Processed {processed_count} unique sources ({progress_pct}% complete)",
+                {
+                    "processed": processed_count,
+                    "total": total_sources,
+                    "unique_evidence": len(new_evidence),
+                    "progress_pct": progress_pct
+                }
+            )
+
     if new_evidence:
         search_index.index_evidence_batch(
             claim_slug,
@@ -157,6 +276,18 @@ async def _gather_and_persist_sources(
             ],
         )
 
+    # Emit progress about evidence found
+    if session_id:
+        if new_evidence:
+            await emit_progress(
+                session_id, 
+                "evidence_found", 
+                f"Found and processed {len(new_evidence)} evidence sources",
+                {"evidence_count": len(new_evidence)}
+            )
+        else:
+            await emit_progress(session_id, "sources_limited", "Limited evidence sources found, continuing with analysis...")
+
     return new_evidence
 
 
@@ -169,6 +300,31 @@ async def root():
         "status": "running",
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@app.get("/claims/progress/{session_id}")
+async def claim_progress_stream(session_id: str):
+    """Server-Sent Events stream for claim creation progress"""
+    return StreamingResponse(
+        generate_progress_stream(session_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+@app.delete("/claims/progress/{session_id}")
+async def cancel_claim_creation(session_id: str):
+    """Cancel an ongoing claim creation process"""
+    if session_id in progress_streams:
+        cancelled_sessions.add(session_id)
+        await emit_progress(session_id, "cancelled", "Claim creation cancelled by user")
+        return {"status": "cancelled", "session_id": session_id}
+    else:
+        raise HTTPException(status_code=404, detail="Session not found")
 
 
 @app.post("/claims", response_model=ClaimResponse)
@@ -214,6 +370,7 @@ async def get_claim(claim_id: str):
         consensus_score=consensus_score,
         provenance_verified=len(claim.evidence) > 0,
         replay_bundle_url=f"/replay/{claim_id}.jsonl",
+        panel=claim.panel_results[-1] if claim.panel_results else None,
     )
 
 
@@ -253,8 +410,8 @@ async def add_statcan_evidence(
 
 
 @app.get("/search", response_model=SearchResponse)
-async def search_claims(q: str = Query(..., min_length=1)):
-    """Search claims and evidence via SQLite FTS."""
+async def search_claims(q: str = Query(..., min_length=1), auto_create: bool = Query(False)):
+    """Search claims and evidence via SQLite FTS, with optional auto-creation."""
     from .models import ClaimSearchHit, EvidenceSearchHit
 
     claim_rows, evidence_rows = search_index.search(q)
@@ -291,7 +448,161 @@ async def search_claims(q: str = Query(..., min_length=1)):
             )
         )
 
-    return SearchResponse(query=q, claims=claim_hits, evidence=evidence_hits)
+    # If no relevant claims found and auto_create is enabled, create a new claim
+    suggestion_slug = None
+    if len(claim_hits) == 0 and auto_create and len(q.strip()) > 10:
+        suggestion_slug = await _create_claim_from_query(q.strip())
+
+    return SearchResponse(
+        query=q, 
+        claims=claim_hits, 
+        evidence=evidence_hits,
+        suggestion_slug=suggestion_slug
+    )
+
+
+@app.post("/claims/create-async")
+async def create_claim_async(request: Dict[str, str]):
+    """Start async claim creation and return session ID for progress tracking"""
+    query = request.get("query", "").strip()
+    if len(query) < 10:
+        raise HTTPException(status_code=400, detail="Query must be at least 10 characters")
+    
+    # Generate session ID
+    session_id = str(uuid4())
+    
+    # Pre-create the progress stream to avoid race condition
+    progress_streams[session_id] = asyncio.Queue()
+    
+    # Start claim creation in background
+    asyncio.create_task(_create_claim_from_query_background(query, session_id))
+    
+    return {"session_id": session_id}
+
+
+async def _create_claim_from_query_background(query: str, session_id: str):
+    """Background task wrapper for claim creation with error handling"""
+    try:
+        slug = await _create_claim_from_query(query, session_id)
+        # Final completion event is sent from within _create_claim_from_query
+    except asyncio.CancelledError:
+        logger.info(f"Claim creation cancelled for session {session_id}")
+        if session_id in progress_streams:
+            await emit_progress(session_id, "cancelled", "Claim creation was cancelled")
+    except Exception as e:
+        logger.error(f"Background claim creation failed for session {session_id}: {e}")
+        if session_id in progress_streams:
+            await emit_progress(session_id, "error", f"Failed to create claim: {str(e)}")
+    finally:
+        # Clean up cancellation tracking
+        if session_id in cancelled_sessions:
+            cancelled_sessions.remove(session_id)
+
+
+def check_cancellation(session_id: Optional[str]):
+    """Check if the session has been cancelled"""
+    if session_id and session_id in cancelled_sessions:
+        raise asyncio.CancelledError(f"Session {session_id} was cancelled by user")
+
+
+async def _create_claim_from_query(query: str, session_id: Optional[str] = None) -> str:
+    """Create a new claim from a search query and populate it with evidence."""
+    try:
+        # Check cancellation before starting
+        check_cancellation(session_id)
+        
+        # Emit progress: Initializing
+        if session_id:
+            await emit_progress(session_id, "initializing", "Setting up claim analysis...")
+
+        # Create the claim
+        claim = Claim(
+            text=query,
+            topic="auto-generated",
+            entities=[],
+        )
+
+        # Generate slug
+        base_slug = generate_slug(query)
+        timestamp_suffix = int(datetime.utcnow().timestamp()) % 10000
+        random_suffix = uuid4().hex[:4]
+        slug = f"{base_slug}-{timestamp_suffix}-{random_suffix}"
+
+        claims_db[slug] = claim
+        search_index.index_claim(slug, claim.text)
+
+        # Check cancellation before evidence gathering
+        check_cancellation(session_id)
+        
+        # Emit progress: Searching for evidence
+        if session_id:
+            await emit_progress(session_id, "searching", "Searching for evidence sources...")
+
+        # Gather evidence using the explorer agent
+        window = TimeWindow()  # No time constraints for new claims
+        try:
+            new_evidence = await _gather_and_persist_sources(slug, claim, window, session_id)
+            logger.info(f"Created claim '{slug}' with {len(new_evidence)} evidence items")
+        except asyncio.CancelledError:
+            logger.info(f"Claim creation cancelled for session {session_id}")
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to gather evidence for new claim '{slug}': {e}")
+            if session_id:
+                await emit_progress(session_id, "evidence_warning", "Limited evidence found, continuing with analysis...")
+
+        # Check cancellation before AI evaluation
+        check_cancellation(session_id)
+
+        # Run initial model panel evaluation if we have evidence
+        if claim.evidence:
+            if session_id:
+                await emit_progress(session_id, "evaluating", "Running AI model panel evaluation...")
+            
+            try:
+                # Add timeout for panel evaluation (120 seconds)
+                panel_result = await asyncio.wait_for(
+                    run_panel_evaluation(claim, DEFAULT_PANEL_MODELS, window),
+                    timeout=120.0
+                )
+                claim.panel_results.append(panel_result)
+                claim.model_assessments = panel_result_to_assessments(panel_result)
+                claim.updated_at = datetime.utcnow()
+                logger.info(f"Completed panel evaluation for new claim '{slug}'")
+                
+                if session_id:
+                    model_count = len(panel_result.models) if panel_result else 0
+                    await emit_progress(
+                        session_id, 
+                        "evaluation_complete", 
+                        f"Analysis complete: {model_count} AI models evaluated the claim",
+                        {"model_count": model_count, "slug": slug}
+                    )
+            except asyncio.TimeoutError:
+                logger.warning(f"Panel evaluation timed out for new claim '{slug}'")
+                if session_id:
+                    await emit_progress(session_id, "evaluation_timeout", "AI evaluation taking longer than expected, claim saved with evidence only")
+            except Exception as e:
+                logger.warning(f"Failed to run panel evaluation for new claim '{slug}': {e}")
+                if session_id:
+                    await emit_progress(session_id, "evaluation_error", "AI evaluation failed, but claim created successfully with evidence")
+
+        # Emit completion
+        if session_id:
+            await emit_progress(
+                session_id, 
+                "complete", 
+                "Claim analysis complete! Redirecting...",
+                {"slug": slug}
+            )
+
+        return slug
+
+    except Exception as e:
+        logger.error(f"Failed to create claim from query '{query}': {e}")
+        if session_id:
+            await emit_progress(session_id, "error", f"Failed to create claim: {str(e)}")
+        raise
 
 
 @app.post("/claims/{claim_id}/verify", response_model=VerificationResponse)
@@ -396,26 +707,23 @@ async def verify_claim(
 async def run_model_panel(claim_id: str, request: PanelRequest):
     """Run multi-model evaluation panel"""
     claim = get_claim_by_id(claim_id)
-
-    # Import here to avoid circular imports
-    from .panel.run_panel import run_panel_evaluation
-
     try:
-        assessments = await run_panel_evaluation(
-            claim, request.models or ["gpt-5", "claude-sonnet-4-20250514"]
+        panel_result = await run_panel_evaluation(
+            claim,
+            request.models or DEFAULT_PANEL_MODELS,
+            request.to_time_window(),
         )
-        claim.model_assessments.extend(assessments)
+
+        claim.panel_results.append(panel_result)
+        if len(claim.panel_results) > 5:
+            claim.panel_results = claim.panel_results[-5:]
+
+        claim.model_assessments = panel_result_to_assessments(panel_result)
         claim.updated_at = datetime.utcnow()
 
         return {
             "status": "success",
-            "assessments": assessments,
-            "consensus_score": (
-                sum(1 for a in assessments if a.verdict.value == "supports")
-                / len(assessments)
-                if assessments
-                else 0
-            ),
+            "panel": panel_result,
         }
     except Exception as e:
         raise HTTPException(
