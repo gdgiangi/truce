@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -27,6 +28,7 @@ load_dotenv()
 
 from ..models import (
     Claim,
+    Evidence,
     ModelAssessment,
     PanelModelVerdict,
     PanelResult,
@@ -35,6 +37,7 @@ from ..models import (
     TimeWindow,
     VerdictType,
 )
+from .agentic_research import AgenticResearcher, SharedEvidencePool
 
 DEFAULT_PANEL_MODELS: List[str] = [
     "gpt-4o",  # OpenAI's latest model (was gpt-5 which doesn't exist)
@@ -301,27 +304,195 @@ def _resolve_adapter(model_name: str) -> BaseProviderAdapter:
     return GPTProviderAdapter(model_name)
 
 
+async def run_agentic_panel_evaluation(
+    claim: Claim,
+    models: Sequence[str],
+    time_window: Optional[TimeWindow] = None,
+    session_id: Optional[str] = None,
+    mcp_server_url: Optional[str] = None,
+) -> PanelResult:
+    """
+    Run agentic panel evaluation where each agent conducts independent research.
+    
+    Args:
+        claim: The claim to evaluate (may have minimal or no initial evidence)
+        models: List of model names to use as panel agents
+        time_window: Optional time window for research
+        session_id: Optional session ID for progress updates
+        mcp_server_url: URL of the FastMCP Brave Search server
+    
+    Returns:
+        PanelResult with independently researched evidence and verdicts
+    """
+    selected_models = list(models) if models else DEFAULT_PANEL_MODELS
+    evidence_pool = SharedEvidencePool()
+    
+    # Phase 1: Independent Agentic Research
+    if session_id:
+        from ..main import emit_agent_update
+        await emit_agent_update(
+            session_id, 
+            "Agentic Panel Coordinator", 
+            "Starting independent research phase", 
+            f"Each of {len(selected_models)} agents will conduct independent research on: {claim.text}",
+            "research_phase",
+            []
+        )
+    
+    # Create researchers for each model/agent
+    researchers = []
+    research_tasks = []
+    
+    for model_name in selected_models:
+        researcher = AgenticResearcher(
+            agent_name=f"{model_name}_researcher",
+            mcp_server_url=mcp_server_url,
+            max_search_turns=5,
+            max_sources_per_turn=8
+        )
+        researchers.append((model_name, researcher))
+        
+        # Start research task
+        task = researcher.conduct_research(claim, time_window, session_id)
+        research_tasks.append(task)
+    
+    # Wait for all research to complete
+    research_results = await asyncio.gather(*research_tasks, return_exceptions=True)
+    
+    # Collect all evidence in shared pool
+    total_evidence_collected = 0
+    for i, (model_name, researcher) in enumerate(researchers):
+        evidence_list = research_results[i]
+        if isinstance(evidence_list, Exception):
+            print(f"Research failed for {model_name}: {evidence_list}")
+            evidence_list = []
+        
+        added_count = await evidence_pool.add_evidence(evidence_list, model_name)
+        total_evidence_collected += added_count
+    
+    if session_id:
+        evidence_summary = evidence_pool.get_evidence_summary()
+        await emit_agent_update(
+            session_id,
+            "Agentic Panel Coordinator",
+            f"Research phase complete: {total_evidence_collected} evidence items collected",
+            f"Collected evidence from {evidence_summary['unique_domains']} domains and {evidence_summary['unique_publishers']} publishers",
+            "research_complete",
+            list(evidence_summary['publishers'][:5])
+        )
+    
+    # Phase 2: Create enriched claim with all collected evidence
+    all_evidence = evidence_pool.get_all_evidence()
+    enriched_claim = Claim(
+        id=claim.id,
+        text=claim.text,
+        topic=claim.topic,
+        entities=claim.entities,
+        evidence=all_evidence,  # Use all researched evidence
+    )
+    
+    # Phase 3: Independent Verdict Formation
+    if session_id:
+        await emit_agent_update(
+            session_id,
+            "Agentic Panel Coordinator",
+            "Starting verdict formation phase",
+            f"Each agent will independently analyze all {len(all_evidence)} evidence items to form their verdict",
+            "verdict_phase",
+            []
+        )
+    
+    # Build prompt with all collected evidence
+    prompt = build_normalized_prompt(enriched_claim, time_window)
+    evidence_lookup = {str(ev.id): ev.id for ev in all_evidence}
+    
+    # Get verdicts from each model independently
+    panel_models: List[PanelModelVerdict] = []
+    for model_name in selected_models:
+        if session_id:
+            await emit_agent_update(
+                session_id,
+                f"{model_name} Agent",
+                f"Analyzing evidence for independent verdict",
+                f"Evaluating {len(all_evidence)} evidence sources to determine claim veracity",
+                "verdict_analysis",
+                []
+            )
+        
+        adapter = _resolve_adapter(model_name)
+        verdict = await adapter.evaluate(enriched_claim, prompt, evidence_lookup)
+        panel_models.append(verdict)
+    
+    # Phase 4: Update original claim with collected evidence
+    claim.evidence.extend(all_evidence)
+    # Remove duplicates based on URL while preserving order
+    seen_urls = set()
+    unique_evidence = []
+    for evidence in claim.evidence:
+        if evidence.url not in seen_urls:
+            seen_urls.add(evidence.url)
+            unique_evidence.append(evidence)
+    claim.evidence = unique_evidence
+    
+    # Phase 5: Aggregate Panel Results
+    summary = aggregate_panel(panel_models)
+    
+    if session_id:
+        await emit_agent_update(
+            session_id,
+            "Agentic Panel Coordinator",
+            f"Panel evaluation complete: {summary.verdict.value}",
+            f"Final verdict: {summary.verdict.value} with {summary.confidence:.2f} confidence from {summary.model_count} independent agents",
+            "complete",
+            []
+        )
+    
+    return PanelResult(prompt=prompt, models=panel_models, summary=summary)
+
+
 async def run_panel_evaluation(
     claim: Claim,
     models: Sequence[str],
     time_window: Optional[TimeWindow] = None,
+    session_id: Optional[str] = None,
+    enable_agentic_research: bool = True,
+    mcp_server_url: Optional[str] = None,
 ) -> PanelResult:
-    """Run adapter evaluations and aggregate into a panel result."""
-    if not claim.evidence:
-        raise ValueError("Cannot run panel evaluation without evidence")
+    """
+    Run panel evaluation with optional agentic research.
+    
+    Args:
+        claim: The claim to evaluate
+        models: List of model names to use as panel agents
+        time_window: Optional time window for evaluation
+        session_id: Optional session ID for progress updates
+        enable_agentic_research: Whether to enable agentic research mode
+        mcp_server_url: URL of the FastMCP Brave Search server
+    
+    Returns:
+        PanelResult with verdicts and evidence
+    """
+    if enable_agentic_research:
+        return await run_agentic_panel_evaluation(
+            claim, models, time_window, session_id, mcp_server_url
+        )
+    else:
+        # Original panel evaluation (requires existing evidence)
+        if not claim.evidence:
+            raise ValueError("Cannot run panel evaluation without evidence")
 
-    selected_models = list(models) if models else DEFAULT_PANEL_MODELS
-    prompt = build_normalized_prompt(claim, time_window)
-    evidence_lookup = {str(ev.id): ev.id for ev in claim.evidence}
+        selected_models = list(models) if models else DEFAULT_PANEL_MODELS
+        prompt = build_normalized_prompt(claim, time_window)
+        evidence_lookup = {str(ev.id): ev.id for ev in claim.evidence}
 
-    panel_models: List[PanelModelVerdict] = []
-    for model_name in selected_models:
-        adapter = _resolve_adapter(model_name)
-        verdict = await adapter.evaluate(claim, prompt, evidence_lookup)
-        panel_models.append(verdict)
+        panel_models: List[PanelModelVerdict] = []
+        for model_name in selected_models:
+            adapter = _resolve_adapter(model_name)
+            verdict = await adapter.evaluate(claim, prompt, evidence_lookup)
+            panel_models.append(verdict)
 
-    summary = aggregate_panel(panel_models)
-    return PanelResult(prompt=prompt, models=panel_models, summary=summary)
+        summary = aggregate_panel(panel_models)
+        return PanelResult(prompt=prompt, models=panel_models, summary=summary)
 
 
 def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:

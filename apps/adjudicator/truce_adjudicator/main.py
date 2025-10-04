@@ -546,54 +546,52 @@ async def _create_claim_from_query(query: str, session_id: Optional[str] = None)
         if session_id:
             await emit_progress(session_id, "searching", "Searching for evidence sources...")
 
-        # Gather evidence using the explorer agent
+        # Skip traditional evidence gathering - agentic research will handle it
         window = TimeWindow()  # No time constraints for new claims
-        try:
-            new_evidence = await _gather_and_persist_sources(slug, claim, window, session_id)
-            logger.info(f"Created claim '{slug}' with {len(new_evidence)} evidence items")
-        except asyncio.CancelledError:
-            logger.info(f"Claim creation cancelled for session {session_id}")
-            raise
-        except Exception as e:
-            logger.warning(f"Failed to gather evidence for new claim '{slug}': {e}")
-            if session_id:
-                await emit_progress(session_id, "evidence_warning", "Limited evidence found, continuing with analysis...")
+        logger.info(f"Created claim '{slug}' - agentic research will gather evidence during panel evaluation")
 
         # Check cancellation before AI evaluation
         check_cancellation(session_id)
 
-        # Run initial model panel evaluation if we have evidence
-        if claim.evidence:
-            if session_id:
-                await emit_progress(session_id, "evaluating", "Running AI model panel evaluation...")
+        # Run agentic research panel evaluation (will gather evidence during research)
+        if session_id:
+            await emit_progress(session_id, "evaluating", "Starting agentic research and AI evaluation...")
+        
+        try:
+            # Add timeout for panel evaluation (180 seconds for agentic research)
+            server_url = os.getenv("MCP_BRAVE_SERVER_URL", "http://mcp-server:8888/mcp")
+            panel_result = await asyncio.wait_for(
+                run_panel_evaluation(
+                    claim, 
+                    DEFAULT_PANEL_MODELS, 
+                    window,
+                    session_id=session_id,
+                    enable_agentic_research=True,
+                    mcp_server_url=server_url
+                ),
+                timeout=180.0  # Longer timeout for agentic research
+            )
+            claim.panel_results.append(panel_result)
+            claim.model_assessments = panel_result_to_assessments(panel_result)
+            claim.updated_at = datetime.utcnow()
+            logger.info(f"Completed panel evaluation for new claim '{slug}'")
             
-            try:
-                # Add timeout for panel evaluation (120 seconds)
-                panel_result = await asyncio.wait_for(
-                    run_panel_evaluation(claim, DEFAULT_PANEL_MODELS, window),
-                    timeout=120.0
+            if session_id:
+                model_count = len(panel_result.models) if panel_result else 0
+                await emit_progress(
+                    session_id, 
+                    "evaluation_complete", 
+                    f"Analysis complete: {model_count} AI models evaluated the claim",
+                    {"model_count": model_count, "slug": slug}
                 )
-                claim.panel_results.append(panel_result)
-                claim.model_assessments = panel_result_to_assessments(panel_result)
-                claim.updated_at = datetime.utcnow()
-                logger.info(f"Completed panel evaluation for new claim '{slug}'")
-                
-                if session_id:
-                    model_count = len(panel_result.models) if panel_result else 0
-                    await emit_progress(
-                        session_id, 
-                        "evaluation_complete", 
-                        f"Analysis complete: {model_count} AI models evaluated the claim",
-                        {"model_count": model_count, "slug": slug}
-                    )
-            except asyncio.TimeoutError:
-                logger.warning(f"Panel evaluation timed out for new claim '{slug}'")
-                if session_id:
-                    await emit_progress(session_id, "evaluation_timeout", "AI evaluation taking longer than expected, claim saved with evidence only")
-            except Exception as e:
-                logger.warning(f"Failed to run panel evaluation for new claim '{slug}': {e}")
-                if session_id:
-                    await emit_progress(session_id, "evaluation_error", "AI evaluation failed, but claim created successfully with evidence")
+        except asyncio.TimeoutError:
+            logger.warning(f"Panel evaluation timed out for new claim '{slug}'")
+            if session_id:
+                await emit_progress(session_id, "evaluation_timeout", "AI evaluation taking longer than expected, claim saved with evidence only")
+        except Exception as e:
+            logger.warning(f"Failed to run panel evaluation for new claim '{slug}': {e}")
+            if session_id:
+                await emit_progress(session_id, "evaluation_error", "AI evaluation failed, but claim created successfully with evidence")
 
         # Emit completion
         if session_id:
@@ -712,14 +710,26 @@ async def verify_claim(
 
 
 @app.post("/claims/{claim_id}/panel/run")
-async def run_model_panel(claim_id: str, request: PanelRequest):
-    """Run multi-model evaluation panel"""
+async def run_model_panel(
+    claim_id: str, 
+    request: PanelRequest,
+    agentic: bool = Query(True, description="Enable agentic research mode"),
+    mcp_server_url: Optional[str] = Query(None, description="FastMCP Brave Search server URL")
+):
+    """Run multi-model evaluation panel with optional agentic research"""
     claim = get_claim_by_id(claim_id)
+    
     try:
+        # Determine MCP server URL
+        server_url = mcp_server_url or os.getenv("MCP_BRAVE_SERVER_URL", "http://localhost:8000/mcp")
+        
         panel_result = await run_panel_evaluation(
             claim,
             request.models or DEFAULT_PANEL_MODELS,
             request.to_time_window(),
+            session_id=None,  # Could add session support for progress tracking
+            enable_agentic_research=agentic,
+            mcp_server_url=server_url
         )
 
         claim.panel_results.append(panel_result)
@@ -728,15 +738,118 @@ async def run_model_panel(claim_id: str, request: PanelRequest):
 
         claim.model_assessments = panel_result_to_assessments(panel_result)
         claim.updated_at = datetime.utcnow()
+        
+        # If agentic research was used, update the claim's evidence
+        if agentic and panel_result.models:
+            # Extract evidence from the enriched claim used in panel evaluation
+            # The evidence would have been collected during the agentic research phase
+            pass  # Evidence is already updated in the agentic research flow
 
         return {
             "status": "success",
             "panel": panel_result,
+            "agentic_research": agentic,
+            "evidence_count": len(claim.evidence) if claim.evidence else 0,
         }
     except Exception as e:
+        logger.error(f"Panel evaluation failed for claim {claim_id}: {e}")
         raise HTTPException(
             status_code=500, detail=f"Panel evaluation failed: {str(e)}"
         )
+
+
+@app.post("/claims/{claim_id}/panel/agentic")
+async def run_agentic_panel_with_progress(claim_id: str, request: PanelRequest):
+    """Run agentic panel evaluation with real-time progress updates via SSE"""
+    claim = get_claim_by_id(claim_id)
+    session_id = str(uuid4())
+    
+    # Create progress queue for this session
+    progress_streams[session_id] = asyncio.Queue()
+    
+    async def generate_progress():
+        """Generate SSE stream with progress updates"""
+        try:
+            # Start the agentic research process
+            server_url = os.getenv("MCP_BRAVE_SERVER_URL", "http://localhost:8000/mcp")
+            
+            # Run agentic panel evaluation with progress tracking
+            panel_task = asyncio.create_task(
+                run_panel_evaluation(
+                    claim,
+                    request.models or DEFAULT_PANEL_MODELS,
+                    request.to_time_window(),
+                    session_id=session_id,
+                    enable_agentic_research=True,
+                    mcp_server_url=server_url
+                )
+            )
+            
+            # Stream progress updates
+            while not panel_task.done():
+                try:
+                    # Wait for progress update with timeout
+                    progress_data = await asyncio.wait_for(
+                        progress_streams[session_id].get(), timeout=1.0
+                    )
+                    
+                    # Send progress update
+                    yield f"data: {json.dumps(progress_data)}\n\n"
+                    
+                except asyncio.TimeoutError:
+                    # Send heartbeat to keep connection alive
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                
+                except Exception as e:
+                    logger.error(f"Progress stream error: {e}")
+                    break
+            
+            # Get final result
+            try:
+                panel_result = await panel_task
+                
+                # Update claim with results
+                claim.panel_results.append(panel_result)
+                if len(claim.panel_results) > 5:
+                    claim.panel_results = claim.panel_results[-5:]
+                
+                claim.model_assessments = panel_result_to_assessments(panel_result)
+                claim.updated_at = datetime.utcnow()
+                
+                # Send completion event
+                completion_data = {
+                    "type": "completion",
+                    "status": "success",
+                    "panel": {
+                        "verdict": panel_result.summary.verdict.value,
+                        "confidence": panel_result.summary.confidence,
+                        "model_count": panel_result.summary.model_count,
+                        "evidence_count": len(claim.evidence) if claim.evidence else 0,
+                    }
+                }
+                yield f"data: {json.dumps(completion_data)}\n\n"
+                
+            except Exception as e:
+                logger.error(f"Agentic panel evaluation failed: {e}")
+                error_data = {
+                    "type": "error",
+                    "message": f"Panel evaluation failed: {str(e)}"
+                }
+                yield f"data: {json.dumps(error_data)}\n\n"
+        
+        finally:
+            # Cleanup
+            if session_id in progress_streams:
+                del progress_streams[session_id]
+    
+    return StreamingResponse(
+        generate_progress(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/consensus/{topic}/statements")

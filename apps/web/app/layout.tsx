@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Truce - Transparent Dialogue Platform",
-  description: "A system for transparent, de-escalating dialogue around contentious claims",
+  title: "Truce - Claim Verification Through Multi-Model Analysis",
+  description: "Verify contentious claims with transparent evidence gathering and independent AI model evaluations",
 };
 
 export default function RootLayout({
@@ -34,11 +34,8 @@ export default function RootLayout({
                   <a href="/" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
                     Home
                   </a>
-                  <a href="/claim/violent-crime-in-canada-is-rising" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
-                    Demo
-                  </a>
-                  <a href="/consensus/canada-crime" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
-                    Consensus
+                  <a href="/search" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
+                    Search
                   </a>
                   <a href="/transparency" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors py-2">
                     Transparency
@@ -60,11 +57,8 @@ export default function RootLayout({
                         <a href="/" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                           Home
                         </a>
-                        <a href="/claim/violent-crime-in-canada-is-rising" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                          Demo
-                        </a>
-                        <a href="/consensus/canada-crime" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                          Consensus
+                        <a href="/search" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                          Search
                         </a>
                         <a href="/transparency" className="px-4 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
                           Transparency

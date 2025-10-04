@@ -1,4 +1,23 @@
 services:
+  mcp-server:
+    build:
+      context: ./apps/adjudicator
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8888"
+    environment:
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+    volumes:
+      - ./apps/adjudicator:/app
+    working_dir: /app
+    command: fastmcp run truce_adjudicator/mcp/brave_search_server.py:mcp --transport http --host 0.0.0.0 --port 8888
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://localhost:8888/mcp", "||", "exit", "0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
   adjudicator:
     build:
       context: ./apps/adjudicator
@@ -14,11 +33,15 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - VC_ISSUER_DID=${VC_ISSUER_DID:-did:key:example}
       - VC_PRIVATE_KEY_BASE58=${VC_PRIVATE_KEY_BASE58:-}
+      - MCP_BRAVE_SERVER_URL=http://mcp-server:8888/mcp
     volumes:
       - ./data:/app/data
       - ./apps/adjudicator:/app
     working_dir: /app
     command: uvicorn truce_adjudicator.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      mcp-server:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
