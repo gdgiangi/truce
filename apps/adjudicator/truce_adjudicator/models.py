@@ -17,6 +17,15 @@ class VerdictType(str, Enum):
     UNCERTAIN = "uncertain"
 
 
+class PanelVerdict(str, Enum):
+    """Panel-level verdict values for provider outputs."""
+
+    TRUE = "true"
+    FALSE = "false"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
+
+
 class VoteType(str, Enum):
     """Vote types for consensus"""
 
@@ -111,6 +120,7 @@ class Claim(BaseModel):
     human_reviews: List[HumanReview] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    panel_results: List["PanelResult"] = Field(default_factory=list)
 
 
 class ConsensusStatement(BaseModel):
@@ -210,6 +220,7 @@ class SearchResponse(BaseModel):
     query: str
     claims: List[ClaimSearchHit] = Field(default_factory=list)
     evidence: List[EvidenceSearchHit] = Field(default_factory=list)
+    suggestion_slug: Optional[str] = None  # Auto-created claim slug if no results found
 
 
 class VerificationRecord(BaseModel):
@@ -269,6 +280,7 @@ class ClaimResponse(BaseModel):
     consensus_score: Optional[float] = None
     provenance_verified: bool = False
     replay_bundle_url: Optional[str] = None
+    panel: Optional["PanelResult"] = None
 
 
 # API Request/Response models
@@ -286,6 +298,23 @@ class PanelRequest(BaseModel):
         default_factory=list, description="Specific models to use"
     )
     temperature: float = Field(default=0.1, ge=0.0, le=1.0)
+    time_start: Optional[datetime] = None
+    time_end: Optional[datetime] = None
+
+    @field_validator("time_end")
+    @classmethod
+    def validate_time_window(
+        cls, value: Optional[datetime], info: ValidationInfo
+    ) -> Optional[datetime]:
+        """Ensure the provided time window is consistent."""
+        start = info.data.get("time_start")
+        if value and start and value < start:
+            raise ValueError("time_end must be greater than or equal to time_start")
+        return value
+
+    def to_time_window(self) -> "TimeWindow":
+        """Convert request parameters into a TimeWindow instance."""
+        return TimeWindow(start=self.time_start, end=self.time_end)
 
 
 class ConsensusVoteRequest(BaseModel):
@@ -302,3 +331,46 @@ class ConsensusStatementRequest(BaseModel):
 
     text: str = Field(..., min_length=10, max_length=140)
     evidence_links: List[UUID] = Field(default_factory=list)
+
+
+class ArgumentWithEvidence(BaseModel):
+    """An argument with supporting evidence and confidence level."""
+
+    argument: str = Field(..., min_length=20, max_length=1000)
+    evidence_ids: List[UUID] = Field(default_factory=list)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
+class PanelModelVerdict(BaseModel):
+    """Structured verdict returned by an individual provider."""
+
+    provider_id: str
+    model: str
+    approval_argument: ArgumentWithEvidence
+    refusal_argument: ArgumentWithEvidence
+    raw: Optional[Dict[str, Any]] = None
+    failed: bool = Field(default=False, description="Whether this model evaluation failed")
+    error: Optional[str] = Field(default=None, description="Error message if failed")
+    error_details: Optional[str] = Field(default=None, description="Detailed error information for debugging")
+
+
+class PanelSummary(BaseModel):
+    """Aggregated summary across provider verdicts."""
+
+    support_confidence: float = Field(..., ge=0.0, le=1.0, description="Aggregate confidence for approval")
+    refute_confidence: float = Field(..., ge=0.0, le=1.0, description="Aggregate confidence for refusal")
+    model_count: int = Field(..., ge=0)
+    verdict: Optional[PanelVerdict] = Field(default=None, description="Derived verdict based on confidence scores")
+
+
+class PanelResult(BaseModel):
+    """Complete panel evaluation payload."""
+
+    prompt: Dict[str, Any]
+    models: List[PanelModelVerdict] = Field(default_factory=list)
+    summary: PanelSummary
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+Claim.model_rebuild()
+ClaimResponse.model_rebuild()

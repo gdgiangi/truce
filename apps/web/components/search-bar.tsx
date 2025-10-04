@@ -2,9 +2,11 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+
+const adjudicatorUrl = "http://localhost:8000";
 
 interface SearchBarProps {
   initialQuery?: string;
@@ -15,19 +17,40 @@ interface SearchBarProps {
 export function SearchBar({ initialQuery = "", placeholder = "Search claims and evidence", className = "" }: SearchBarProps) {
   const router = useRouter();
   const [query, setQuery] = useState(initialQuery);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     setQuery(initialQuery);
   }, [initialQuery]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = query.trim();
-    if (!trimmed) {
+    if (!trimmed || isLoading) {
       return;
     }
-    const params = new URLSearchParams({ q: trimmed });
-    router.push(`/search?${params.toString()}`);
+
+    setIsLoading(true);
+
+    try {
+      // Start the async claim creation
+      const response = await fetch(`${adjudicatorUrl}/claims/create-async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: trimmed })
+      });
+
+      if (response.ok) {
+        const { session_id } = await response.json();
+        // Navigate to the analyzing page with session ID
+        router.push(`/analyzing?session=${session_id}&q=${encodeURIComponent(trimmed)}`);
+      } else {
+        throw new Error('Failed to start claim creation');
+      }
+    } catch (error) {
+      console.error("Failed to create claim:", error);
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -40,10 +63,18 @@ export function SearchBar({ initialQuery = "", placeholder = "Search claims and 
           onChange={(event) => setQuery(event.target.value)}
           placeholder={placeholder}
           aria-label={placeholder}
+          disabled={isLoading}
         />
       </div>
-      <Button type="submit" className="sm:w-32">
-        Search
+      <Button type="submit" className="sm:w-32" disabled={isLoading}>
+        {isLoading ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Analyzing
+          </>
+        ) : (
+          "Search"
+        )}
       </Button>
     </form>
   );
