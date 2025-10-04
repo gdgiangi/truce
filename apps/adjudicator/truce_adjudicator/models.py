@@ -349,6 +349,9 @@ class PanelModelVerdict(BaseModel):
     approval_argument: ArgumentWithEvidence
     refusal_argument: ArgumentWithEvidence
     raw: Optional[Dict[str, Any]] = None
+    failed: bool = Field(default=False, description="Whether this model evaluation failed")
+    error: Optional[str] = Field(default=None, description="Error message if failed")
+    error_details: Optional[str] = Field(default=None, description="Detailed error information for debugging")
 
 
 class PanelSummary(BaseModel):
