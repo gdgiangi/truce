@@ -821,8 +821,9 @@ async def run_agentic_panel_with_progress(claim_id: str, request: PanelRequest):
                     "type": "completion",
                     "status": "success",
                     "panel": {
-                        "verdict": panel_result.summary.verdict.value,
-                        "confidence": panel_result.summary.confidence,
+                        "verdict": panel_result.summary.verdict.value if panel_result.summary.verdict else "unknown",
+                        "support_confidence": panel_result.summary.support_confidence,
+                        "refute_confidence": panel_result.summary.refute_confidence,
                         "model_count": panel_result.summary.model_count,
                         "evidence_count": len(claim.evidence) if claim.evidence else 0,
                     }

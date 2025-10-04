@@ -60,13 +60,9 @@ class AgenticResearcher:
             client = Client(self.mcp_server_url)
             
             async with client:
-                # Verify server connection
-                try:
-                    await client.ping()
-                    print(f"Successfully connected to MCP server")
-                except Exception as ping_error:
-                    print(f"Ping failed but continuing: {ping_error}")
-                    # Continue anyway - some servers don't support ping
+                # Note: FastMCP HTTP transport doesn't require explicit ping
+                # Connection will be verified when first tool is called
+                print(f"MCP client initialized for {self.agent_name}")
                 
                 # Start research process
                 if session_id:

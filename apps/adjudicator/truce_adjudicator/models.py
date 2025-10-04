@@ -333,25 +333,31 @@ class ConsensusStatementRequest(BaseModel):
     evidence_links: List[UUID] = Field(default_factory=list)
 
 
+class ArgumentWithEvidence(BaseModel):
+    """An argument with supporting evidence and confidence level."""
+
+    argument: str = Field(..., min_length=20, max_length=1000)
+    evidence_ids: List[UUID] = Field(default_factory=list)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
+
 class PanelModelVerdict(BaseModel):
     """Structured verdict returned by an individual provider."""
 
     provider_id: str
     model: str
-    verdict: PanelVerdict
-    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    rationale: str = Field(..., min_length=20, max_length=2000)
-    citations: List[UUID] = Field(default_factory=list)
+    approval_argument: ArgumentWithEvidence
+    refusal_argument: ArgumentWithEvidence
     raw: Optional[Dict[str, Any]] = None
 
 
 class PanelSummary(BaseModel):
     """Aggregated summary across provider verdicts."""
 
-    verdict: PanelVerdict
-    confidence: float = Field(..., ge=0.0, le=1.0)
+    support_confidence: float = Field(..., ge=0.0, le=1.0, description="Aggregate confidence for approval")
+    refute_confidence: float = Field(..., ge=0.0, le=1.0, description="Aggregate confidence for refusal")
     model_count: int = Field(..., ge=0)
-    distribution: Dict[str, int] = Field(default_factory=dict)
+    verdict: Optional[PanelVerdict] = Field(default=None, description="Derived verdict based on confidence scores")
 
 
 class PanelResult(BaseModel):

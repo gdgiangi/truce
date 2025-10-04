@@ -23,17 +23,21 @@ interface Evidence {
 interface PanelModelVerdict {
   provider_id: string;
   model: string;
-  verdict: PanelVerdictValue;
-  confidence?: number;
-  rationale: string;
-  citations: string[];
+  approval_argument: ArgumentWithEvidence;
+  refusal_argument: ArgumentWithEvidence;
+}
+
+interface ArgumentWithEvidence {
+  argument: string;
+  evidence_ids: string[];
+  confidence: number;
 }
 
 interface PanelSummary {
-  verdict: PanelVerdictValue;
-  confidence: number;
+  support_confidence: number;
+  refute_confidence: number;
   model_count: number;
-  distribution: Record<string, number>;
+  verdict?: PanelVerdictValue;
 }
 
 interface PanelResult {
@@ -183,61 +187,44 @@ function truncate(text: string, maxLength = 140): string {
   return `${text.slice(0, maxLength - 1)}…`;
 }
 
-function VerdictDonut({ distribution }: { distribution: Record<string, number> }) {
-  const verdicts = [
-    { key: 'true', name: 'Supports', color: 'bg-green-500' },
-    { key: 'false', name: 'Refutes', color: 'bg-red-500' },
-    { key: 'mixed', name: 'Mixed', color: 'bg-yellow-500' },
-    { key: 'unknown', name: 'Unknown', color: 'bg-gray-500' }
-  ];
-
-  const total = verdicts.reduce((sum, verdict) => sum + (distribution[verdict.key] || 0), 0);
-  const circumference = 2 * Math.PI * 15.91549430918954;
-
-  let offset = 0;
-  const segments = verdicts.map((verdict) => {
-    const value = distribution[verdict.key] || 0;
-    const percentage = total > 0 ? value / total : 0;
-    const strokeDasharray = circumference * percentage;
-    const strokeDashoffset = circumference - offset;
-    offset += strokeDasharray;
-
-    return (
-      <circle
-        key={verdict.key}
-        cx="16"
-        cy="16"
-        r="15.91549430918954"
-        fill="transparent"
-        stroke={verdict.color.replace('bg-', '')}
-        strokeWidth="4"
-        strokeDasharray={`${strokeDasharray} ${circumference}`}
-        strokeDashoffset={-strokeDashoffset}
-        className={verdict.color}
-      />
-    );
-  });
-
+function AggregateVerdictScores({ summary }: { summary: PanelSummary }) {
+  const supportPercentage = Math.round(summary.support_confidence * 100);
+  const refutePercentage = Math.round(summary.refute_confidence * 100);
+  
   return (
-    <div className="flex flex-col items-center">
-      <div className="relative mb-4 h-32 w-32">
-        <svg className="h-32 w-32 -rotate-90" viewBox="0 0 32 32">
-          {segments}
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-lg font-semibold">{total}</span>
+    <div className="space-y-6">
+      {/* Support Confidence */}
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-semibold text-green-700">Support</span>
+          <span className="text-2xl font-bold text-green-700">{supportPercentage}%</span>
+        </div>
+        <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-green-500 transition-all duration-500"
+            style={{ width: `${supportPercentage}%` }}
+          />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        {verdicts.map((verdict) => (
-          <div key={verdict.key} className="flex items-center gap-2">
-            <div className={`h-3 w-3 rounded-full ${verdict.color}`} />
-            <span>
-              {verdict.name}: {distribution[verdict.key] || 0}
-            </span>
-          </div>
-        ))}
+      {/* Refute Confidence */}
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-semibold text-red-700">Refute</span>
+          <span className="text-2xl font-bold text-red-700">{refutePercentage}%</span>
+        </div>
+        <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-red-500 transition-all duration-500"
+            style={{ width: `${refutePercentage}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="pt-4 border-t">
+        <div className="text-xs text-muted-foreground text-center">
+          Based on {summary.model_count} independent agent{summary.model_count !== 1 ? 's' : ''}
+        </div>
       </div>
     </div>
   );
@@ -255,30 +242,6 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
   const panelModels = panel?.models ?? [];
   const modelCount = panel ? panel.summary.model_count : claim.model_assessments.length;
   const evidenceMap = new Map(claim.evidence.map((item) => [item.id, item]));
-
-  const baseDistribution: Record<string, number> = {
-    true: 0,
-    false: 0,
-    mixed: 0,
-    unknown: 0,
-  };
-
-  if (panel) {
-    Object.keys(baseDistribution).forEach((key) => {
-      baseDistribution[key] = panel.summary.distribution[key] ?? 0;
-    });
-  } else {
-    claim.model_assessments.forEach((assessment) => {
-      const mapped = mapLegacyVerdict(assessment.verdict);
-      baseDistribution[mapped] = (baseDistribution[mapped] || 0) + 1;
-    });
-  }
-
-  const supportRatio = panel
-    ? panel.summary.model_count > 0
-      ? (panel.summary.distribution["true"] ?? 0) / panel.summary.model_count
-      : 0
-    : consensus_score ?? 0;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -383,11 +346,13 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
                   <>
                     <div className="rounded-lg border bg-muted/40 p-4 text-sm">
                       <div className="flex flex-wrap items-center gap-3">
-                        <Badge variant={getVerdictColor(panel.summary.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
-                          Panel verdict: {formatPanelVerdict(panel.summary.verdict)}
-                        </Badge>
+                        {panel.summary.verdict && (
+                          <Badge variant={getVerdictColor(panel.summary.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
+                            Panel verdict: {formatPanelVerdict(panel.summary.verdict)}
+                          </Badge>
+                        )}
                         <span className="text-muted-foreground">
-                          Confidence {Math.round(panel.summary.confidence * 100)}%
+                          Support: {Math.round(panel.summary.support_confidence * 100)}% | Refute: {Math.round(panel.summary.refute_confidence * 100)}%
                         </span>
                         <span className="text-muted-foreground">
                           {panel.summary.model_count} models
@@ -401,79 +366,107 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
                     <div className="space-y-4">
                       {panelModels.map((modelVerdict) => {
                         const providerInfo = getProviderInfo(modelVerdict.model || modelVerdict.provider_id);
-                        const confidence = modelVerdict.confidence ?? panel.summary.confidence ?? 0;
-                        const citations = modelVerdict.citations || [];
+                        const approvalConf = Math.round(modelVerdict.approval_argument.confidence * 100);
+                        const refusalConf = Math.round(modelVerdict.refusal_argument.confidence * 100);
 
                         return (
                           <div key={`${modelVerdict.provider_id}-${modelVerdict.model}`} className="rounded-lg border p-4">
-                            <div className="mb-3 flex items-start justify-between">
-                              <div className="flex items-start gap-3">
-                                {providerInfo.logo && (
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-gray-50">
-                                    <ProviderLogo
-                                      src={providerInfo.logo}
-                                      alt={`${providerInfo.name} logo`}
-                                      className="h-5 w-5 object-contain"
-                                    />
-                                  </div>
-                                )}
-                                <div>
-                                  <h4 className="font-medium">{providerInfo.name}</h4>
-                                  <div className="mt-1 flex items-center gap-2">
-                                    <Badge variant={getVerdictColor(modelVerdict.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
-                                      {formatPanelVerdict(modelVerdict.verdict)}
-                                    </Badge>
-                                    <span className="text-sm text-muted-foreground">
-                                      {Math.round(confidence * 100)}% certainty
-                                    </span>
-                                  </div>
+                            <div className="mb-4 flex items-start gap-3">
+                              {providerInfo.logo && (
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-gray-50">
+                                  <ProviderLogo
+                                    src={providerInfo.logo}
+                                    alt={`${providerInfo.name} logo`}
+                                    className="h-5 w-5 object-contain"
+                                  />
+                                </div>
+                              )}
+                              <div className="flex-1">
+                                <h4 className="font-medium">{providerInfo.name}</h4>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <Badge variant="outline" className="border-green-500 text-green-700">
+                                    Support: {approvalConf}%
+                                  </Badge>
+                                  <Badge variant="outline" className="border-red-500 text-red-700">
+                                    Refute: {refusalConf}%
+                                  </Badge>
                                 </div>
                               </div>
-                              <Progress value={confidence * 100} className="w-20" />
                             </div>
 
-                            <p className="mb-3 text-sm leading-6 text-muted-foreground">
-                              {modelVerdict.rationale}
-                            </p>
-
-                            {citations.length > 0 && (
-                              <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-                                <p className="font-medium text-muted-foreground">Citations ({citations.length})</p>
-                                <ul className="space-y-1">
-                                  {citations.slice(0, 3).map((citationId) => {
-                                    const evidence = evidenceMap.get(citationId);
-                                    return (
-                                      <li key={citationId} className="leading-snug">
-                                        {evidence ? (
-                                          <>
-                                            <span className="font-medium text-truce-700">
-                                              {evidence.publisher || evidence.domain || "Source"}
+                            {/* Approval Argument */}
+                            <div className="mb-4 rounded-md bg-green-50 p-3 border border-green-200">
+                              <h5 className="text-xs font-semibold text-green-800 mb-2">
+                                APPROVAL ARGUMENT ({approvalConf}% confidence)
+                              </h5>
+                              <p className="text-sm leading-6 text-gray-700">
+                                {modelVerdict.approval_argument.argument}
+                              </p>
+                              {modelVerdict.approval_argument.evidence_ids.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-green-200">
+                                  <p className="text-xs font-medium text-green-800 mb-1">
+                                    Evidence ({modelVerdict.approval_argument.evidence_ids.length})
+                                  </p>
+                                  <ul className="space-y-1 text-xs">
+                                    {modelVerdict.approval_argument.evidence_ids.slice(0, 2).map((citationId) => {
+                                      const evidence = evidenceMap.get(citationId);
+                                      return (
+                                        <li key={citationId} className="leading-snug text-gray-600">
+                                          {evidence ? (
+                                            <span>
+                                              <span className="font-medium">{evidence.publisher || evidence.domain || "Source"}</span>
+                                              {evidence.snippet && evidence.snippet !== "Content available at source." && `: ${truncate(evidence.snippet, 80)}`}
                                             </span>
-                                            : {evidence.snippet && evidence.snippet !== "Content available at source." 
-                                              ? truncate(evidence.snippet) 
-                                              : (
-                                                <a 
-                                                  href={evidence.url} 
-                                                  target="_blank" 
-                                                  rel="noopener noreferrer"
-                                                  className="text-truce-600 hover:underline"
-                                                >
-                                                  View source
-                                                </a>
-                                              )}
-                                          </>
-                                        ) : (
-                                          <span className="text-muted-foreground">Evidence reference (ID: {String(citationId).substring(0, 8)}...)</span>
-                                        )}
-                                      </li>
-                                    );
-                                  })}
-                                  {citations.length > 3 && (
-                                    <li>+ {citations.length - 3} more reference(s)</li>
-                                  )}
-                                </ul>
-                              </div>
-                            )}
+                                          ) : (
+                                            <span>Evidence ID: {String(citationId).substring(0, 8)}...</span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                    {modelVerdict.approval_argument.evidence_ids.length > 2 && (
+                                      <li className="text-gray-500">+ {modelVerdict.approval_argument.evidence_ids.length - 2} more</li>
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Refusal Argument */}
+                            <div className="rounded-md bg-red-50 p-3 border border-red-200">
+                              <h5 className="text-xs font-semibold text-red-800 mb-2">
+                                REFUSAL ARGUMENT ({refusalConf}% confidence)
+                              </h5>
+                              <p className="text-sm leading-6 text-gray-700">
+                                {modelVerdict.refusal_argument.argument}
+                              </p>
+                              {modelVerdict.refusal_argument.evidence_ids.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-red-200">
+                                  <p className="text-xs font-medium text-red-800 mb-1">
+                                    Evidence ({modelVerdict.refusal_argument.evidence_ids.length})
+                                  </p>
+                                  <ul className="space-y-1 text-xs">
+                                    {modelVerdict.refusal_argument.evidence_ids.slice(0, 2).map((citationId) => {
+                                      const evidence = evidenceMap.get(citationId);
+                                      return (
+                                        <li key={citationId} className="leading-snug text-gray-600">
+                                          {evidence ? (
+                                            <span>
+                                              <span className="font-medium">{evidence.publisher || evidence.domain || "Source"}</span>
+                                              {evidence.snippet && evidence.snippet !== "Content available at source." && `: ${truncate(evidence.snippet, 80)}`}
+                                            </span>
+                                          ) : (
+                                            <span>Evidence ID: {String(citationId).substring(0, 8)}...</span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                    {modelVerdict.refusal_argument.evidence_ids.length > 2 && (
+                                      <li className="text-gray-500">+ {modelVerdict.refusal_argument.evidence_ids.length - 2} more</li>
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -491,25 +484,14 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
           {/* Sidebar */}
           <div className="space-y-6">
             {/* Verdict Summary */}
-            {(panelModels.length > 0 || claim.model_assessments.length > 0) && (
+            {panel && panel.summary && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Model Consensus</CardTitle>
+                  <CardTitle className="text-lg">Aggregate Verdict</CardTitle>
+                  <CardDescription>Panel confidence scores</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <VerdictDonut distribution={baseDistribution} />
-
-                  {modelCount > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Support Score
-                      </div>
-                      <Progress value={supportRatio * 100} className="mb-2" />
-                      <div className="text-xs text-muted-foreground">
-                        {Math.round(supportRatio * 100)}% of models support this claim
-                      </div>
-                    </div>
-                  )}
+                  <AggregateVerdictScores summary={panel.summary} />
                 </CardContent>
               </Card>
             )}

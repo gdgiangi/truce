@@ -46,15 +46,24 @@ DEFAULT_PANEL_MODELS: List[str] = [
     "claude-sonnet-4-20250514",  # Anthropic's latest Claude Sonnet 4
 ]
 
-SYSTEM_PROMPT = """You are an objective fact-checking assistant. Respond **only** with a JSON object matching:
+SYSTEM_PROMPT = """You are an objective fact-checking assistant. For each claim, you must provide BOTH an approval argument and a refusal argument with evidence and confidence.
+
+Respond **only** with a JSON object matching:
 {
   "provider_id": "provider:model",
-  "verdict": "true|false|mixed|unknown",
-  "confidence": 0.0-1.0,
-  "rationale": "50-500 words explaining reasoning with evidence IDs",
-  "citations": ["evidence_id", ...]
+  "approval_argument": {
+    "argument": "50-500 words explaining why the claim might be true, with evidence IDs",
+    "evidence_ids": ["evidence_id", ...],
+    "confidence": 0.0-1.0
+  },
+  "refusal_argument": {
+    "argument": "50-500 words explaining why the claim might be false, with evidence IDs",
+    "evidence_ids": ["evidence_id", ...],
+    "confidence": 0.0-1.0
+  }
 }
-Assess the claim using the evidence list. Cite by evidence ID. If unsure, return verdict "unknown"."""
+
+Provide balanced analysis with evidence citations for both perspectives. Higher confidence means stronger evidence support."""
 
 
 def build_normalized_prompt(claim: Claim, window: Optional[TimeWindow]) -> Dict[str, Any]:
@@ -106,30 +115,50 @@ class BaseProviderAdapter:
         prompt: Dict[str, Any],
         evidence_lookup: Dict[str, UUID],
     ) -> PanelModelVerdict:
+        from ..models import ArgumentWithEvidence
+        
         payload = await self._call_provider(prompt)
         parsed = _ensure_payload_dict(payload)
-        verdict = _parse_panel_verdict(parsed.get("verdict"))
-        citations = _map_citations(parsed.get("citations"), evidence_lookup)
-        rationale = parsed.get("rationale") or _fallback_rationale(
-            self.provider_id, self.model, prompt, parsed.get("verdict")
+        
+        # Parse approval argument
+        approval_data = parsed.get("approval_argument", {})
+        approval_arg = approval_data.get("argument", "") or _fallback_argument(
+            self.provider_id, self.model, prompt, "approval"
         )
-        if len(rationale) < 50:
-            rationale = _pad_rationale(rationale)
-        confidence_raw = parsed.get("confidence")
-        confidence = None
-        if confidence_raw is not None:
-            try:
-                confidence = max(0.0, min(1.0, float(confidence_raw)))
-            except (TypeError, ValueError):
-                confidence = None
+        # Ensure argument meets length requirements (50-1000 chars)
+        if len(approval_arg) > 1000:
+            approval_arg = approval_arg[:1000]
+        elif len(approval_arg) < 50:
+            approval_arg = _pad_argument(approval_arg, "approval")
+        approval_evidence = _map_citations(approval_data.get("evidence_ids", []), evidence_lookup)
+        approval_confidence = _parse_confidence(approval_data.get("confidence"), default=0.5)
+        
+        # Parse refusal argument
+        refusal_data = parsed.get("refusal_argument", {})
+        refusal_arg = refusal_data.get("argument", "") or _fallback_argument(
+            self.provider_id, self.model, prompt, "refusal"
+        )
+        # Ensure argument meets length requirements (50-1000 chars)
+        if len(refusal_arg) > 1000:
+            refusal_arg = refusal_arg[:1000]
+        elif len(refusal_arg) < 50:
+            refusal_arg = _pad_argument(refusal_arg, "refusal")
+        refusal_evidence = _map_citations(refusal_data.get("evidence_ids", []), evidence_lookup)
+        refusal_confidence = _parse_confidence(refusal_data.get("confidence"), default=0.5)
 
         return PanelModelVerdict(
             provider_id=self.provider_id,
             model=self.model,
-            verdict=verdict,
-            confidence=confidence,
-            rationale=rationale,
-            citations=citations,
+            approval_argument=ArgumentWithEvidence(
+                argument=approval_arg,
+                evidence_ids=approval_evidence,
+                confidence=approval_confidence,
+            ),
+            refusal_argument=ArgumentWithEvidence(
+                argument=refusal_arg,
+                evidence_ids=refusal_evidence,
+                confidence=refusal_confidence,
+            ),
             raw=parsed,
         )
 
@@ -438,11 +467,12 @@ async def run_agentic_panel_evaluation(
     summary = aggregate_panel(panel_models)
     
     if session_id:
+        verdict_str = summary.verdict.value if summary.verdict else "mixed"
         await emit_agent_update(
             session_id,
             "Agentic Panel Coordinator",
-            f"Panel evaluation complete: {summary.verdict.value}",
-            f"Final verdict: {summary.verdict.value} with {summary.confidence:.2f} confidence from {summary.model_count} independent agents",
+            f"Panel evaluation complete: {verdict_str}",
+            f"Final verdict: {verdict_str} with {summary.support_confidence:.2f} support / {summary.refute_confidence:.2f} refute confidence from {summary.model_count} independent agents",
             "complete",
             []
         )
@@ -496,66 +526,76 @@ async def run_panel_evaluation(
 
 
 def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:
-    """Aggregate per-model verdicts via majority vote with dispersion confidence."""
+    """Aggregate per-model verdicts by averaging approval/refusal confidences."""
     if not models:
-        empty_distribution = {verdict.value: 0 for verdict in PanelVerdict}
         return PanelSummary(
-            verdict=PanelVerdict.UNKNOWN,
-            confidence=0.0,
+            support_confidence=0.0,
+            refute_confidence=0.0,
             model_count=0,
-            distribution=empty_distribution,
+            verdict=PanelVerdict.UNKNOWN,
         )
 
-    distribution = Counter(model.verdict.value for model in models)
-    all_keys = {verdict.value for verdict in PanelVerdict}
-    for key in all_keys:
-        distribution.setdefault(key, 0)
-
-    max_votes = max(distribution.values())
-    winners = [key for key, count in distribution.items() if count == max_votes and count > 0]
-    if len(winners) == 1:
-        panel_verdict = PanelVerdict(winners[0])
+    # Calculate average confidence scores across all models
+    total_approval = sum(model.approval_argument.confidence for model in models)
+    total_refusal = sum(model.refusal_argument.confidence for model in models)
+    
+    support_confidence = total_approval / len(models)
+    refute_confidence = total_refusal / len(models)
+    
+    # Determine verdict based on which confidence is higher
+    if support_confidence > refute_confidence:
+        if support_confidence >= 0.7:
+            verdict = PanelVerdict.TRUE
+        elif support_confidence >= 0.5:
+            verdict = PanelVerdict.MIXED
+        else:
+            verdict = PanelVerdict.UNKNOWN
+    elif refute_confidence > support_confidence:
+        if refute_confidence >= 0.7:
+            verdict = PanelVerdict.FALSE
+        elif refute_confidence >= 0.5:
+            verdict = PanelVerdict.MIXED
+        else:
+            verdict = PanelVerdict.UNKNOWN
     else:
-        panel_verdict = PanelVerdict.MIXED
-
-    agree_count = distribution.get(panel_verdict.value, 0)
-    total = len(models)
-    confidence = 1.0 - ((total - agree_count) / total)
-    confidence = max(0.0, min(1.0, round(confidence, 4)))
+        verdict = PanelVerdict.MIXED
 
     return PanelSummary(
-        verdict=panel_verdict,
-        confidence=confidence,
-        model_count=total,
-        distribution={key: distribution[key] for key in sorted(distribution.keys())},
+        support_confidence=round(support_confidence, 4),
+        refute_confidence=round(refute_confidence, 4),
+        model_count=len(models),
+        verdict=verdict,
     )
 
 
 def panel_result_to_assessments(panel: PanelResult) -> List[ModelAssessment]:
     """Convert panel verdicts into legacy ModelAssessment structures."""
-    verdict_map = {
-        PanelVerdict.TRUE: VerdictType.SUPPORTS,
-        PanelVerdict.FALSE: VerdictType.REFUTES,
-        PanelVerdict.MIXED: VerdictType.MIXED,
-        PanelVerdict.UNKNOWN: VerdictType.UNCERTAIN,
-    }
-
     assessments: List[ModelAssessment] = []
+    
     for model in panel.models:
-        confidence = model.confidence
-        if confidence is None:
-            confidence = panel.summary.confidence
-        if confidence is None:
-            confidence = 0.0
-        rationale = model.rationale
-        if len(rationale) < 50:
-            rationale = _pad_rationale(rationale)
+        # Use the stronger argument (higher confidence) as the primary verdict
+        if model.approval_argument.confidence > model.refusal_argument.confidence:
+            verdict = VerdictType.SUPPORTS
+            confidence = model.approval_argument.confidence
+            rationale = f"Approval: {model.approval_argument.argument}"
+            citations = model.approval_argument.evidence_ids
+        elif model.refusal_argument.confidence > model.approval_argument.confidence:
+            verdict = VerdictType.REFUTES
+            confidence = model.refusal_argument.confidence
+            rationale = f"Refusal: {model.refusal_argument.argument}"
+            citations = model.refusal_argument.evidence_ids
+        else:
+            verdict = VerdictType.MIXED
+            confidence = (model.approval_argument.confidence + model.refusal_argument.confidence) / 2
+            rationale = f"Mixed: Approval ({model.approval_argument.confidence:.2f}) - {model.approval_argument.argument[:100]}... Refusal ({model.refusal_argument.confidence:.2f}) - {model.refusal_argument.argument[:100]}..."
+            citations = list(set(model.approval_argument.evidence_ids + model.refusal_argument.evidence_ids))
+        
         assessments.append(
             ModelAssessment(
                 model_name=model.model,
-                verdict=verdict_map.get(model.verdict, VerdictType.UNCERTAIN),
+                verdict=verdict,
                 confidence=confidence,
-                citations=model.citations,
+                citations=citations,
                 rationale=rationale,
             )
         )
@@ -632,29 +672,54 @@ def _map_citations(
     return result
 
 
-def _fallback_rationale(
+def _parse_confidence(value: Any, default: float = 0.5) -> float:
+    """Parse confidence value ensuring it's within 0-1 range."""
+    if value is None:
+        return default
+    try:
+        conf = float(value)
+        return max(0.0, min(1.0, conf))
+    except (TypeError, ValueError):
+        return default
+
+
+def _fallback_argument(
     provider_id: str,
     model: str,
     prompt: Dict[str, Any],
-    verdict: Any,
+    argument_type: str,
 ) -> str:
+    """Generate fallback argument when provider response is incomplete."""
     claim_text = prompt.get("claim", {}).get("text", "the claim")
     evidence_count = prompt.get("evidence_count", 0)
-    verdict_text = str(verdict or "unknown")
-    return (
-        f"{provider_id} ({model}) returned a fallback verdict '{verdict_text}'. "
-        f"Automated tooling analysed {evidence_count} evidence item(s) for the claim '{claim_text}'. "
-        "This rationale is generated locally because the remote provider response was unavailable."
-    )
+    
+    if argument_type == "approval":
+        return (
+            f"{provider_id} ({model}) fallback approval argument. "
+            f"Analyzing {evidence_count} evidence item(s) for potential support of: {claim_text}. "
+            "This argument is generated locally due to incomplete provider response."
+        )
+    else:
+        return (
+            f"{provider_id} ({model}) fallback refusal argument. "
+            f"Analyzing {evidence_count} evidence item(s) for potential refutation of: {claim_text}. "
+            "This argument is generated locally due to incomplete provider response."
+        )
 
 
-def _pad_rationale(text: str) -> str:
+def _pad_argument(text: str, argument_type: str) -> str:
+    """Pad short arguments to meet minimum length requirements."""
+    if len(text) >= 50:
+        # If already long enough, just ensure it's not too long
+        return text[:1000] if len(text) > 1000 else text
+    
     filler = (
-        " Additional context: the panel adapter ensures transparency by documenting "
-        "any assumptions and explicitly listing cited evidence identifiers."
+        f" This {argument_type} argument includes analysis of available evidence "
+        "with explicit citation of source identifiers for transparency."
     )
-    combined = (text or "No rationale provided.") + filler
-    return combined if len(combined) >= 50 else combined.ljust(50, " ")
+    combined = (text or f"No {argument_type} argument provided.") + filler
+    # Ensure we don't exceed max length
+    return combined[:1000] if len(combined) > 1000 else (combined if len(combined) >= 50 else combined.ljust(50, " "))
 
 
 def _generate_stub_payload(
@@ -664,42 +729,58 @@ def _generate_stub_payload(
     error: str = "",
 ) -> Dict[str, Any]:
     evidence = prompt.get("evidence", [])
-    first_id = evidence[0]["id"] if evidence else None
-    verdict_profile = _stub_profile(provider_id)
+    evidence_ids = [ev["id"] for ev in evidence[:3]] if evidence else []
+    profile = _stub_profile(provider_id)
     
-    # Build a more informative rationale that includes evidence sources
+    # Build evidence sources text
     evidence_sources = []
-    for i, ev in enumerate(evidence[:3]):  # Show first 3 sources
+    for ev in evidence[:3]:
         publisher = ev.get("publisher", "Unknown")
         evidence_sources.append(publisher)
-    
     sources_text = ", ".join(evidence_sources) if evidence_sources else "no sources"
     
-    rationale = (
-        f"{provider_id} ({model}) produced a deterministic offline assessment. "
-        f"The claim was reviewed against {len(evidence)} evidence snippet(s) from {sources_text} "
-        "and the adapter is reporting a stub response to keep tests self-contained."
+    approval_arg = (
+        f"{provider_id} ({model}) stub approval analysis. "
+        f"Reviewed {len(evidence)} evidence items from {sources_text}. "
+        "This is a deterministic offline assessment for testing."
     )
+    
+    refusal_arg = (
+        f"{provider_id} ({model}) stub refusal analysis. "
+        f"Reviewed {len(evidence)} evidence items from {sources_text}. "
+        "This is a deterministic offline assessment for testing."
+    )
+    
     if error:
-        rationale += f" Provider noted: {error}."
+        approval_arg += f" Note: {error}."
+        refusal_arg += f" Note: {error}."
 
     payload: Dict[str, Any] = {
         "provider_id": provider_id,
-        "verdict": verdict_profile["verdict"].value,
-        "confidence": verdict_profile["confidence"],
-        "rationale": _pad_rationale(rationale),
-        "citations": [first_id] if first_id else [],
+        "approval_argument": {
+            "argument": _pad_argument(approval_arg, "approval"),
+            "evidence_ids": evidence_ids,
+            "confidence": profile["approval_confidence"],
+        },
+        "refusal_argument": {
+            "argument": _pad_argument(refusal_arg, "refusal"),
+            "evidence_ids": evidence_ids,
+            "confidence": profile["refusal_confidence"],
+        },
     }
     return payload
 
 
 def _stub_profile(provider_id: str) -> Dict[str, Any]:
+    """Generate stub confidence profiles for testing."""
     if provider_id.startswith("openai"):
-        return {"verdict": PanelVerdict.TRUE, "confidence": 0.78}
+        return {"approval_confidence": 0.75, "refusal_confidence": 0.25}
     if provider_id.startswith("xai"):
-        return {"verdict": PanelVerdict.FALSE, "confidence": 0.62}
+        return {"approval_confidence": 0.30, "refusal_confidence": 0.70}
     if provider_id.startswith("google"):
-        return {"verdict": PanelVerdict.MIXED, "confidence": 0.55}
-    return {"verdict": PanelVerdict.TRUE, "confidence": 0.6}
+        return {"approval_confidence": 0.55, "refusal_confidence": 0.45}
+    if provider_id.startswith("anthropic"):
+        return {"approval_confidence": 0.65, "refusal_confidence": 0.35}
+    return {"approval_confidence": 0.60, "refusal_confidence": 0.40}
 
 
