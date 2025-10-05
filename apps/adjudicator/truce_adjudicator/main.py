@@ -44,8 +44,10 @@ from .verification import (
 from .panel.run_panel import (
     DEFAULT_PANEL_MODELS,
     panel_result_to_assessments,
+    reconcile_complementary_verdicts,
     run_panel_evaluation,
 )
+from .models import PanelResult, PanelSummary
 
 explorer_agent = ExplorerAgent()
 
@@ -739,6 +741,9 @@ async def run_model_panel(
         claim.model_assessments = panel_result_to_assessments(panel_result)
         claim.updated_at = datetime.utcnow()
         
+        # Apply complementary claim reconciliation if needed
+        panel_result = await _apply_complementary_reconciliation(claim, panel_result)
+        
         # If agentic research was used, update the claim's evidence
         if agentic and panel_result.models:
             # Extract evidence from the enriched claim used in panel evaluation
@@ -815,6 +820,9 @@ async def run_agentic_panel_with_progress(claim_id: str, request: PanelRequest):
                 
                 claim.model_assessments = panel_result_to_assessments(panel_result)
                 claim.updated_at = datetime.utcnow()
+                
+                # Apply complementary claim reconciliation if needed
+                panel_result = await _apply_complementary_reconciliation(claim, panel_result)
                 
                 # Send completion event
                 completion_data = {
@@ -994,6 +1002,61 @@ async def get_replay_bundle(claim_id: str):
         raise HTTPException(
             status_code=500, detail=f"Failed to create replay bundle: {str(e)}"
         )
+
+
+async def _apply_complementary_reconciliation(claim: Claim, panel_result: PanelResult) -> PanelResult:
+    """
+    Apply complementary claim reconciliation within the same topic.
+    
+    Checks for other claims in the same topic that might be complementary
+    and reconciles their verdicts to ensure logical consistency.
+    """
+    
+    # Find other claims in the same topic
+    topic_claims = [c for c in claims_db.values() if c.topic == claim.topic and c.id != claim.id]
+    
+    # Check each claim for complementarity
+    for other_claim in topic_claims:
+        if not other_claim.panel_results:
+            continue
+            
+        other_panel = other_claim.panel_results[-1]  # Most recent panel result
+        
+        # Apply reconciliation
+        reconciled_current, reconciled_other = reconcile_complementary_verdicts(
+            claim.text, panel_result.summary,
+            other_claim.text, other_panel.summary
+        )
+        
+        # If reconciliation changed the current claim's summary, update it
+        if (reconciled_current.support_confidence != panel_result.summary.support_confidence or
+            reconciled_current.refute_confidence != panel_result.summary.refute_confidence):
+            
+            # Create new panel result with reconciled summary
+            panel_result = PanelResult(
+                prompt=panel_result.prompt,
+                models=panel_result.models,
+                summary=reconciled_current
+            )
+            
+            # Also update the other claim if it was reconciled
+            if (reconciled_other.support_confidence != other_panel.summary.support_confidence or
+                reconciled_other.refute_confidence != other_panel.summary.refute_confidence):
+                
+                other_reconciled_panel = PanelResult(
+                    prompt=other_panel.prompt,
+                    models=other_panel.models,
+                    summary=reconciled_other
+                )
+                
+                # Update the other claim's most recent panel result
+                other_claim.panel_results[-1] = other_reconciled_panel
+                other_claim.model_assessments = panel_result_to_assessments(other_reconciled_panel)
+                other_claim.updated_at = datetime.utcnow()
+            
+            break  # Only reconcile with the first complementary claim found
+    
+    return panel_result
 
 
 if __name__ == "__main__":

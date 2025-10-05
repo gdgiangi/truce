@@ -26,9 +26,17 @@ interface PanelModelVerdict {
   refusal_argument: ArgumentWithEvidence;
 }
 
+interface CitationLink {
+  start: number;
+  end: number;
+  evidence_id: string;
+  text: string;
+}
+
 interface ArgumentWithEvidence {
   argument: string;
   evidence_ids: string[];
+  citation_links?: CitationLink[];
   confidence: number;
 }
 

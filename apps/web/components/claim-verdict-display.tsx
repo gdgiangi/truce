@@ -27,9 +27,17 @@ interface PanelModelVerdict {
   error_details?: string;
 }
 
+interface CitationLink {
+  start: number;
+  end: number;
+  evidence_id: string;
+  text: string;
+}
+
 interface ArgumentWithEvidence {
   argument: string;
   evidence_ids: string[];
+  citation_links?: CitationLink[];
   confidence: number;
 }
 
@@ -82,6 +90,64 @@ function getProviderInfo(modelName: string): { name: string; logo: string; short
   };
 }
 
+function CitationHighlightedText({ 
+  text, 
+  citationLinks = [], 
+  evidenceMap,
+  onEvidenceClick 
+}: {
+  text: string;
+  citationLinks?: CitationLink[];
+  evidenceMap: Map<string, Evidence>;
+  onEvidenceClick: (evidenceId: string) => void;
+}) {
+  if (!citationLinks || citationLinks.length === 0) {
+    return <span>{text}</span>;
+  }
+
+  // Sort citation links by position to render in order
+  const sortedLinks = [...citationLinks].sort((a, b) => a.start - b.start);
+  const elements: React.ReactNode[] = [];
+  let lastPosition = 0;
+
+  sortedLinks.forEach((link, index) => {
+    // Add text before the citation
+    if (link.start > lastPosition) {
+      elements.push(
+        <span key={`text-${index}`}>
+          {text.substring(lastPosition, link.start)}
+        </span>
+      );
+    }
+
+    // Add the highlighted citation
+    const evidence = evidenceMap.get(link.evidence_id);
+    elements.push(
+      <span
+        key={`citation-${index}`}
+        className="bg-gray-100 hover:bg-gray-200 cursor-pointer rounded px-1 py-0.5 text-gray-800 border-b border-gray-300 transition-colors underline decoration-gray-400 decoration-dotted"
+        onClick={() => onEvidenceClick(link.evidence_id)}
+        title={evidence ? `From: ${evidence.publisher || evidence.domain}` : 'Evidence source'}
+      >
+        {link.text}
+      </span>
+    );
+
+    lastPosition = link.end;
+  });
+
+  // Add any remaining text after the last citation
+  if (lastPosition < text.length) {
+    elements.push(
+      <span key="text-final">
+        {text.substring(lastPosition)}
+      </span>
+    );
+  }
+
+  return <span>{elements}</span>;
+}
+
 function ModelArgumentCard({ 
   modelVerdict, 
   evidenceMap,
@@ -92,9 +158,15 @@ function ModelArgumentCard({
   side: "support" | "refute";
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
+  const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string | null>(null);
   const providerInfo = getProviderInfo(modelVerdict.model || modelVerdict.provider_id);
   const argument = side === "support" ? modelVerdict.approval_argument : modelVerdict.refusal_argument;
   const confidence = Math.round(argument.confidence * 100);
+
+  const handleEvidenceClick = (evidenceId: string) => {
+    setHighlightedEvidenceId(evidenceId);
+    setShowEvidence(true);
+  };
 
   return (
     <div className="group relative bg-white border border-gray-100 rounded-2xl p-6 hover:shadow-lg transition-all duration-300">
@@ -124,7 +196,12 @@ function ModelArgumentCard({
       </div>
 
       <p className="text-sm text-gray-700 leading-relaxed mb-4">
-        {argument.argument}
+        <CitationHighlightedText
+          text={argument.argument}
+          citationLinks={argument.citation_links}
+          evidenceMap={evidenceMap}
+          onEvidenceClick={handleEvidenceClick}
+        />
       </p>
 
       {argument.evidence_ids.length > 0 && (
@@ -149,7 +226,13 @@ function ModelArgumentCard({
                     href={evidence.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-start gap-2 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors group"
+                    className={`flex items-start gap-2 p-3 rounded-lg transition-colors group ${
+                      highlightedEvidenceId === citationId
+                        ? "bg-gray-200 border border-gray-400"
+                        : "bg-gray-50 hover:bg-gray-100"
+                    }`}
+                    onMouseEnter={() => setHighlightedEvidenceId(citationId)}
+                    onMouseLeave={() => setHighlightedEvidenceId(null)}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">

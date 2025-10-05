@@ -333,11 +333,21 @@ class ConsensusStatementRequest(BaseModel):
     evidence_links: List[UUID] = Field(default_factory=list)
 
 
+class CitationLink(BaseModel):
+    """Links a text span to evidence source."""
+    
+    start: int = Field(..., description="Start character position in argument text")  
+    end: int = Field(..., description="End character position in argument text")
+    evidence_id: UUID = Field(..., description="ID of the evidence source")
+    text: str = Field(..., description="The cited text span")
+
+
 class ArgumentWithEvidence(BaseModel):
     """An argument with supporting evidence and confidence level."""
 
-    argument: str = Field(..., min_length=20, max_length=1000)
+    argument: str = Field(..., min_length=20, max_length=2000)
     evidence_ids: List[UUID] = Field(default_factory=list)
+    citation_links: List[CitationLink] = Field(default_factory=list, description="Links between text spans and evidence sources")
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 

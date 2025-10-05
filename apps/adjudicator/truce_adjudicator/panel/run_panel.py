@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover - dependency optional
 load_dotenv()
 
 from ..models import (
+    CitationLink,
     Claim,
     Evidence,
     ModelAssessment,
@@ -54,12 +55,12 @@ Required JSON structure:
 {
   "provider_id": "provider:model",
   "approval_argument": {
-    "argument": "50-500 words explaining why the claim might be true, with evidence IDs",
+    "argument": "Complete 100-400 word analysis explaining why the claim might be true, with evidence-based reasoning",
     "evidence_ids": ["evidence_id"],
     "confidence": 0.7
   },
   "refusal_argument": {
-    "argument": "50-500 words explaining why the claim might be false, with evidence IDs",
+    "argument": "Complete 100-400 word analysis explaining why the claim might be false, with evidence-based reasoning", 
     "evidence_ids": ["evidence_id"],
     "confidence": 0.3
   }
@@ -69,7 +70,14 @@ Rules:
 - Use only valid JSON (no trailing commas, no comments)
 - confidence must be a number between 0.0 and 1.0
 - evidence_ids must be an array of strings
-- Provide balanced analysis with evidence citations for both perspectives"""
+- CRITICAL: Use ALL available evidence in your analysis. Do not cherry-pick only supporting evidence.
+- For EACH piece of evidence, explain how it relates to your argument and cite its evidence_id
+- When stating facts from evidence, include the relevant evidence_id in parentheses like (12345678-1234-1234-1234-123456789012)
+- Provide balanced analysis that acknowledges ALL evidence, including contradictory evidence
+- IMPORTANT: Place citations immediately after the claims they support, not at the end of sentences
+- Do NOT assign high confidence to both approval and refusal. If one side is > 0.7, the other must be < 0.3. If evidence is ambiguous or conflicting, set both near 0.5.
+- Base confidence on strength, quality, and recency of ALL cited evidence within the provided time_window.
+- Your confidence should reflect the overall weight of evidence, not just the strongest individual piece."""
 
 
 def build_normalized_prompt(claim: Claim, window: Optional[TimeWindow]) -> Dict[str, Any]:
@@ -121,7 +129,7 @@ class BaseProviderAdapter:
         prompt: Dict[str, Any],
         evidence_lookup: Dict[str, UUID],
     ) -> PanelModelVerdict:
-        from ..models import ArgumentWithEvidence
+        from ..models import ArgumentWithEvidence, CitationLink
         
         payload = await self._call_provider(prompt)
         parsed = _ensure_payload_dict(payload)
@@ -131,38 +139,55 @@ class BaseProviderAdapter:
         approval_arg = approval_data.get("argument", "") or _fallback_argument(
             self.provider_id, self.model, prompt, "approval"
         )
-        # Ensure argument meets length requirements (50-1000 chars)
-        if len(approval_arg) > 1000:
-            approval_arg = approval_arg[:1000]
+        # Ensure argument meets length requirements (50-2000 chars)
+        if len(approval_arg) > 2000:
+            # Smart truncation - try to end at sentence boundary
+            approval_arg = _smart_truncate(approval_arg, 2000)
         elif len(approval_arg) < 50:
             approval_arg = _pad_argument(approval_arg, "approval")
         approval_evidence = _map_citations(approval_data.get("evidence_ids", []), evidence_lookup)
         approval_confidence = _parse_confidence(approval_data.get("confidence"), default=0.5)
+        
+        # Create reverse lookup: str(uuid) -> uuid for citation extraction
+        reverse_evidence_lookup = {str(uuid_val): uuid_val for uuid_val in evidence_lookup.values()}
+        
+        # Extract citation links from argument text
+        approval_citation_links = _extract_citation_links(approval_arg, reverse_evidence_lookup)
+        # Clean the argument text for display (remove citation markers)
+        approval_arg_clean = _clean_argument_text(approval_arg)
         
         # Parse refusal argument
         refusal_data = parsed.get("refusal_argument", {})
         refusal_arg = refusal_data.get("argument", "") or _fallback_argument(
             self.provider_id, self.model, prompt, "refusal"
         )
-        # Ensure argument meets length requirements (50-1000 chars)
-        if len(refusal_arg) > 1000:
-            refusal_arg = refusal_arg[:1000]
+        # Ensure argument meets length requirements (50-2000 chars)
+        if len(refusal_arg) > 2000:
+            # Smart truncation - try to end at sentence boundary
+            refusal_arg = _smart_truncate(refusal_arg, 2000)
         elif len(refusal_arg) < 50:
             refusal_arg = _pad_argument(refusal_arg, "refusal")
         refusal_evidence = _map_citations(refusal_data.get("evidence_ids", []), evidence_lookup)
         refusal_confidence = _parse_confidence(refusal_data.get("confidence"), default=0.5)
+        
+        # Extract citation links from argument text  
+        refusal_citation_links = _extract_citation_links(refusal_arg, reverse_evidence_lookup)
+        # Clean the argument text for display (remove citation markers)
+        refusal_arg_clean = _clean_argument_text(refusal_arg)
 
         return PanelModelVerdict(
             provider_id=self.provider_id,
             model=self.model,
             approval_argument=ArgumentWithEvidence(
-                argument=approval_arg,
+                argument=approval_arg_clean,
                 evidence_ids=approval_evidence,
+                citation_links=approval_citation_links,
                 confidence=approval_confidence,
             ),
             refusal_argument=ArgumentWithEvidence(
-                argument=refusal_arg,
+                argument=refusal_arg_clean,
                 evidence_ids=refusal_evidence,
+                citation_links=refusal_citation_links,
                 confidence=refusal_confidence,
             ),
             raw=parsed,
@@ -202,6 +227,10 @@ class BaseProviderAdapter:
             "unterminated string",
         ]
         
+        # However, for JSON parsing errors, let's be more lenient and try to recover
+        if any(pattern in error_msg for pattern in ["expecting ',' delimiter", "json decode", "invalid json"]):
+            return False  # Don't fail, let the improved JSON parser handle it
+        
         return any(pattern in error_msg for pattern in fatal_patterns)
 
     async def _invoke(self, prompt: Dict[str, Any]) -> Any:
@@ -236,7 +265,7 @@ class GPTProviderAdapter(BaseProviderAdapter):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": serialized},
             ],
-            max_tokens=1200,
+            max_tokens=2000,
             temperature=0.1,
             response_format={"type": "json_object"},
         )
@@ -274,7 +303,7 @@ class GrokProviderAdapter(BaseProviderAdapter):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": serialized},
             ],
-            max_tokens=1200,
+            max_tokens=2000,
             temperature=0.1,
         )
         content = completion.choices[0].message.content if completion.choices else ""
@@ -406,7 +435,7 @@ Respond with ONLY the JSON object. No markdown, no explanations, no code blocks.
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": serialized},
             ],
-            max_tokens=900,
+            max_tokens=1500,
             temperature=0.1,
         )
         content = completion.choices[0].message.content if completion.choices else ""
@@ -440,7 +469,7 @@ class AnthropicProviderAdapter(BaseProviderAdapter):
 
         message = await self._client.messages.create(
             model=anthropic_model,
-            max_tokens=900,
+            max_tokens=1500,
             temperature=0.1,
             system=SYSTEM_PROMPT,
             messages=[
@@ -504,6 +533,17 @@ async def run_agentic_panel_evaluation(
     researchers = []
     research_tasks = []
     
+    # Use a neutralized version of the claim text for evidence discovery so that
+    # contradictory phrasings (e.g., rising vs declining) share the same evidence pool.
+    neutral_text = _neutralize_claim_text(claim.text)
+    research_claim = Claim(
+        id=claim.id,
+        text=neutral_text,
+        topic=claim.topic,
+        entities=claim.entities,
+        evidence=[],
+    )
+
     for model_name in selected_models:
         researcher = AgenticResearcher(
             agent_name=f"{model_name}_researcher",
@@ -514,7 +554,7 @@ async def run_agentic_panel_evaluation(
         researchers.append((model_name, researcher))
         
         # Start research task
-        task = researcher.conduct_research(claim, time_window, session_id)
+        task = researcher.conduct_research(research_claim, time_window, session_id)
         research_tasks.append(task)
     
     # Wait for all research to complete
@@ -875,7 +915,9 @@ def _repair_json(text: str) -> str:
     - Trailing commas before closing braces/brackets
     - Multiple consecutive commas
     - Comments (both // and /* */ style)
+    - Missing commas between properties
     - Leading/trailing whitespace
+    - Grok-specific issues like missing commas after array elements
     """
     # Remove comments (// style) - do this first
     text = re.sub(r'//.*$', '', text, flags=re.MULTILINE)
@@ -899,6 +941,24 @@ def _repair_json(text: str) -> str:
     
     # Fix missing commas between ] and [
     text = re.sub(r']\s*\[', '], [', text)
+    
+    # Fix missing commas between value and key (Grok common error)
+    # "value" "key": -> "value", "key":
+    text = re.sub(r'"\s+"([^"]*?)"\s*:', r'", "\1":', text)
+    
+    # Fix missing comma after object/array before next property
+    # } "key": -> }, "key":
+    text = re.sub(r'}\s*"([^"]*?)"\s*:', r'}, "\1":', text)
+    # ] "key": -> ], "key":
+    text = re.sub(r']\s*"([^"]*?)"\s*:', r'], "\1":', text)
+    
+    # Fix common Grok error: number/boolean followed by string key without comma
+    # 0.7 "refusal_argument" -> 0.7, "refusal_argument"
+    text = re.sub(r'([0-9.]+|true|false)\s+"([^"]*?)"\s*:', r'\1, "\2":', text)
+    
+    # Fix array elements missing commas
+    # ["id1" "id2"] -> ["id1", "id2"]
+    text = re.sub(r'"\s+"([^"]*?)"(?=\s*[,\]])', r'", "\1"', text)
     
     # Strip leading/trailing whitespace
     text = text.strip()
@@ -984,11 +1044,110 @@ def _fallback_argument(
         )
 
 
+def _extract_citation_links(argument: str, evidence_lookup: Dict[str, UUID]) -> List[CitationLink]:
+    """Extract citation links from argument text that contains evidence ID patterns."""
+    import re
+    
+    citation_links = []
+    
+    # Pattern to match both formats: (evidence_id: uuid) and (uuid)
+    patterns = [
+        r'\(evidence_id:\s*([a-fA-F0-9-]+)\)',  # Original format
+        r'\(([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})\)',  # Direct UUID format
+    ]
+    
+    for pattern in patterns:
+        for match in re.finditer(pattern, argument):
+            evidence_id_str = match.group(1)
+            
+            # Check if this evidence_id exists in our lookup
+            if evidence_id_str in evidence_lookup:
+                evidence_id = evidence_lookup[evidence_id_str]
+                
+                # Find the start of the sentence or clause that precedes this citation
+                citation_end = match.start()
+                
+                # Look backwards for sentence boundaries
+                text_before = argument[:citation_end]
+                sentence_starts = [0]  # Start of text
+                
+                # Find sentence boundaries (., !, ?)
+                for i, char in enumerate(text_before):
+                    if char in '.!?' and i < len(text_before) - 1:
+                        # Make sure it's not an abbreviation or decimal
+                        if text_before[i+1] == ' ' and (i == 0 or not text_before[i-1].isdigit()):
+                            sentence_starts.append(i + 2)  # Skip the punctuation and space
+                
+                # Take the last sentence start before the citation
+                citation_start = sentence_starts[-1]
+                
+                # Extract the text being cited (without the citation marker)
+                cited_text = argument[citation_start:citation_end].strip()
+                
+                if cited_text:  # Only add if we have meaningful text
+                    citation_links.append(CitationLink(
+                        start=citation_start,
+                        end=citation_end,
+                        evidence_id=evidence_id,
+                        text=cited_text
+                    ))
+    
+    return citation_links
+
+
+def _clean_argument_text(argument: str) -> str:
+    """Remove citation markers from argument text for display."""
+    import re
+    
+    # Remove both citation formats
+    patterns = [
+        r'\s*\(evidence_id:\s*[a-fA-F0-9-]+\)',  # Original format
+        r'\s*\([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\)',  # Direct UUID format
+    ]
+    
+    cleaned = argument
+    for pattern in patterns:
+        cleaned = re.sub(pattern, '', cleaned)
+    
+    # Clean up any double spaces
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    return cleaned
+
+
+def _smart_truncate(text: str, max_length: int) -> str:
+    """Truncate text at sentence boundary to avoid cutting off mid-sentence."""
+    if len(text) <= max_length:
+        return text
+    
+    # Try to find a sentence ending within the limit
+    truncated = text[:max_length]
+    sentence_endings = ['. ', '! ', '? ']
+    
+    # Look for the last sentence ending within the limit
+    best_end = -1
+    for ending in sentence_endings:
+        pos = truncated.rfind(ending)
+        if pos > max_length * 0.7:  # Only truncate if we keep at least 70% 
+            best_end = max(best_end, pos + 1)
+    
+    if best_end > 0:
+        return text[:best_end].strip()
+    
+    # Fallback to word boundary
+    words = text[:max_length].rsplit(' ', 1)
+    if len(words) > 1:
+        return words[0] + "..."
+    
+    # Last resort: hard truncate
+    return text[:max_length-3] + "..."
+
+
 def _pad_argument(text: str, argument_type: str) -> str:
     """Pad short arguments to meet minimum length requirements."""
     if len(text) >= 50:
         # If already long enough, just ensure it's not too long
-        return text[:1000] if len(text) > 1000 else text
+        return _smart_truncate(text, 2000)
     
     filler = (
         f" This {argument_type} argument includes analysis of available evidence "
@@ -996,7 +1155,7 @@ def _pad_argument(text: str, argument_type: str) -> str:
     )
     combined = (text or f"No {argument_type} argument provided.") + filler
     # Ensure we don't exceed max length
-    return combined[:1000] if len(combined) > 1000 else (combined if len(combined) >= 50 else combined.ljust(50, " "))
+    return _smart_truncate(combined, 2000) if len(combined) >= 50 else combined.ljust(50, " ")
 
 
 def _generate_stub_payload(
@@ -1032,17 +1191,45 @@ def _generate_stub_payload(
         approval_arg += f" Note: {error}."
         refusal_arg += f" Note: {error}."
 
+    # Directional bias: mirror approval/refusal based on claim wording and evidence trend
+    claim_text = (prompt.get("claim", {}).get("text") or "").lower()
+    claim_dir = _infer_claim_direction(claim_text)
+    evidence_dir = _infer_evidence_direction(prompt.get("evidence", []))
+
+    # Base tendencies by provider, then nudge based on direction alignment
+    base_approval = float(profile["approval_confidence"])  # 0..1
+    # Compute desired approval leaning
+    desired_high = None  # True -> approval high, False -> approval low, None -> neutral
+    if claim_dir and evidence_dir:
+        desired_high = claim_dir == evidence_dir
+    elif claim_dir:
+        # If no evidence signal, assume upward claims require stronger evidence than downward
+        desired_high = True if claim_dir == "down" else False
+    else:
+        desired_high = None
+
+    if desired_high is None:
+        approval_conf = base_approval
+    else:
+        # Anchor to strong lean with slight provider flavor
+        anchor = 0.8 if desired_high else 0.2
+        approval_conf = 0.7 * anchor + 0.3 * base_approval
+
+    # Clamp and mirror refusal for consistency
+    approval_conf = max(0.05, min(0.95, approval_conf))
+    refusal_conf = 1.0 - approval_conf
+
     payload: Dict[str, Any] = {
         "provider_id": provider_id,
         "approval_argument": {
             "argument": _pad_argument(approval_arg, "approval"),
             "evidence_ids": evidence_ids,
-            "confidence": profile["approval_confidence"],
+            "confidence": approval_conf,
         },
         "refusal_argument": {
             "argument": _pad_argument(refusal_arg, "refusal"),
             "evidence_ids": evidence_ids,
-            "confidence": profile["refusal_confidence"],
+            "confidence": refusal_conf,
         },
     }
     return payload
@@ -1103,5 +1290,139 @@ def _stub_profile(provider_id: str) -> Dict[str, Any]:
     if provider_id.startswith("anthropic"):
         return {"approval_confidence": 0.65, "refusal_confidence": 0.35}
     return {"approval_confidence": 0.60, "refusal_confidence": 0.40}
+
+
+def _infer_claim_direction(text: str) -> Optional[str]:
+    """Infer direction of claim: returns "up", "down", or None."""
+    t = text.lower()
+    up_tokens = ["rise", "rising", "increase", "increasing", "up", "higher", "grow", "growing"]
+    down_tokens = ["fall", "falling", "decrease", "decreasing", "down", "lower", "decline", "declining"]
+    if any(tok in t for tok in up_tokens) and not any(tok in t for tok in down_tokens):
+        return "up"
+    if any(tok in t for tok in down_tokens) and not any(tok in t for tok in up_tokens):
+        return "down"
+    return None
+
+
+def _infer_evidence_direction(evidence_list: List[Dict[str, Any]]) -> Optional[str]:
+    """Infer aggregate direction from evidence snippets (very naive lexical count)."""
+    score = 0
+    for ev in evidence_list:
+        snippet = (ev.get("snippet") or "").lower()
+        # Up cues
+        for tok in ["rise", "rising", "increase", "increasing", "up", "higher", "grow", "growing"]:
+            if tok in snippet:
+                score += 1
+        # Down cues
+        for tok in ["fall", "falling", "decrease", "decreasing", "down", "lower", "decline", "declining"]:
+            if tok in snippet:
+                score -= 1
+    if score > 1:
+        return "up"
+    if score < -1:
+        return "down"
+    return None
+
+
+def _neutralize_claim_text(text: str) -> str:
+    """Remove directional tokens so research queries remain neutral.
+    Example: "Violent crime in Canada is rising" -> "Violent crime in Canada"
+    """
+    t = text.strip()
+    # Remove common direction phrases while preserving subject
+    patterns = [
+        r"\b(is|was|were|has been|have been)\b\s+(rising|increasing|growing|up)\b",
+        r"\b(is|was|were|has been|have been)\b\s+(declining|decreasing|falling|down)\b",
+        r"\b(rising|increasing|growing|up)\b",
+        r"\b(declining|decreasing|falling|down)\b",
+    ]
+    for pat in patterns:
+        t = re.sub(pat, "", t, flags=re.IGNORECASE).strip()
+    # Remove trailing punctuation/connectors left behind
+    t = re.sub(r"\s{2,}", " ", t)
+    t = re.sub(r"\s+[.,;:!?]$", "", t)
+    # If we stripped too much, fall back to original
+    return t if len(t) >= max(10, len(text) * 0.5) else text
+
+
+def detect_complementary_claims(claim1_text: str, claim2_text: str) -> bool:
+    """
+    Detect if two claims are complementary (opposite directional assertions about same topic).
+    
+    Examples:
+    - "Violent crime in Canada is rising" vs "Violent crime in Canada is declining"
+    - "Unemployment rates are increasing" vs "Unemployment rates are decreasing"
+    """
+    # Normalize both texts
+    t1 = claim1_text.lower().strip()
+    t2 = claim2_text.lower().strip()
+    
+    # Remove directional words to get base topics
+    base1 = _neutralize_claim_text(t1).lower()
+    base2 = _neutralize_claim_text(t2).lower()
+    
+    # Check if base topics are similar (simple word overlap check)
+    words1 = set(base1.split())
+    words2 = set(base2.split())
+    overlap = len(words1.intersection(words2))
+    
+    # Need significant overlap in base topic
+    if overlap < max(2, min(len(words1), len(words2)) * 0.6):
+        return False
+    
+    # Check for opposite directional indicators
+    dir1 = _infer_claim_direction(t1)
+    dir2 = _infer_claim_direction(t2)
+    
+    return dir1 is not None and dir2 is not None and dir1 != dir2
+
+
+def reconcile_complementary_verdicts(
+    claim1_text: str, summary1: PanelSummary,
+    claim2_text: str, summary2: PanelSummary
+) -> tuple[PanelSummary, PanelSummary]:
+    """
+    Reconcile two complementary claims to ensure logical consistency.
+    
+    If both claims have high support (>0.6), adjust them to be complementary:
+    - The claim with higher support keeps its verdict
+    - The complementary claim gets inverted confidences
+    """
+    if not detect_complementary_claims(claim1_text, claim2_text):
+        return summary1, summary2
+    
+    # If both have high support, that's inconsistent
+    if summary1.support_confidence > 0.6 and summary2.support_confidence > 0.6:
+        # Keep the one with higher support, invert the other
+        if summary1.support_confidence >= summary2.support_confidence:
+            # Invert summary2
+            new_summary2 = PanelSummary(
+                support_confidence=summary2.refute_confidence,
+                refute_confidence=summary2.support_confidence,
+                model_count=summary2.model_count,
+                verdict=_invert_verdict(summary2.verdict)
+            )
+            return summary1, new_summary2
+        else:
+            # Invert summary1
+            new_summary1 = PanelSummary(
+                support_confidence=summary1.refute_confidence,
+                refute_confidence=summary1.support_confidence,
+                model_count=summary1.model_count,
+                verdict=_invert_verdict(summary1.verdict)
+            )
+            return new_summary1, summary2
+    
+    return summary1, summary2
+
+
+def _invert_verdict(verdict: Optional[PanelVerdict]) -> Optional[PanelVerdict]:
+    """Invert a panel verdict for complementary claim reconciliation."""
+    if verdict == PanelVerdict.TRUE:
+        return PanelVerdict.FALSE
+    elif verdict == PanelVerdict.FALSE:
+        return PanelVerdict.TRUE
+    else:
+        return verdict  # MIXED/UNKNOWN stay the same
 
 
