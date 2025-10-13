@@ -31,7 +31,7 @@ interface SearchResponse {
   suggestion_slug?: string;
 }
 
-const adjudicatorUrl = "http://localhost:8000";
+const adjudicatorUrl = process.env.NEXT_PUBLIC_ADJUDICATOR_API_URL || "http://localhost:8000";
 
 function formatScore(score: number): string {
   const relevance = 1 / (1 + score);
