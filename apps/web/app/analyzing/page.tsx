@@ -4,8 +4,8 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
-  Loader2, Search, FileText, Bot, CheckCircle, AlertCircle, 
-  BookOpen, Building, Newspaper, Database, Zap, X 
+  Loader2, Search, FileText, Bot, AlertCircle, 
+  BookOpen, Building, Newspaper, Database, Zap
 } from "lucide-react";
 
 interface ProgressEvent {
