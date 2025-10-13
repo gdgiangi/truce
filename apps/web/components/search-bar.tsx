@@ -6,7 +6,7 @@ import { Search, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-const adjudicatorUrl = "http://localhost:8000";
+const adjudicatorUrl = process.env.NEXT_PUBLIC_ADJUDICATOR_URL || "http://localhost:8000";
 
 interface SearchBarProps {
   initialQuery?: string;
