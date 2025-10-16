@@ -19,7 +19,7 @@ make dev
 
 Visit **http://localhost:3000** and enter any claim to analyze.
 
-> 💡 **New**: Agentic research is now enabled by default! Each AI agent conducts independent research using the Brave Search API. See [AGENTIC_SETUP.md](./AGENTIC_SETUP.md) for details.
+> 💡 **New**: Agentic research is now enabled by default! Each AI agent conducts independent research using the Brave Search API. 
 
 ## What is Truce?
 
