@@ -920,44 +920,50 @@ def _repair_json(text: str) -> str:
     - Grok-specific issues like missing commas after array elements
     """
     # Remove comments (// style) - do this first
+    # Removes single-line comments starting with //
     text = re.sub(r'//.*$', '', text, flags=re.MULTILINE)
     
     # Remove comments (/* */ style)
+    # Removes multi-line comments enclosed in /* ... */
     text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
     
     # Remove trailing commas before closing braces/brackets (most common issue)
-    # Handle multiple cases:
+    # Example: {"a": 1,} -> {"a": 1}
+    # Handles cases like: [1, 2,] or {"key": "value",}
     text = re.sub(r',(\s*[}\]])', r'\1', text)
     
     # Remove multiple consecutive commas
+    # Example: {"a": 1,, "b": 2} -> {"a": 1, "b": 2}
     text = re.sub(r',\s*,+', ',', text)
     
     # Fix missing commas between string values and next key (common LLM error)
-    # "value1" "key2" -> "value1", "key2"
+    # Example: "value1" "key2" -> "value1", "key2"
     text = re.sub(r'"\s+(?=")', '", ', text)
     
-    # Fix missing commas between } and {
+    # Fix missing commas between } and { (adjacent objects)
+    # Example: {"a": 1}{"b": 2} -> {"a": 1}, {"b": 2}
     text = re.sub(r'}\s*{', '}, {', text)
     
-    # Fix missing commas between ] and [
+    # Fix missing commas between ] and [ (adjacent arrays)
+    # Example: [1][2] -> [1], [2]
     text = re.sub(r']\s*\[', '], [', text)
     
     # Fix missing commas between value and key (Grok common error)
-    # "value" "key": -> "value", "key":
+    # Example: "value" "key": -> "value", "key":
     text = re.sub(r'"\s+"([^"]*?)"\s*:', r'", "\1":', text)
     
     # Fix missing comma after object/array before next property
-    # } "key": -> }, "key":
+    # Example: } "key": -> }, "key":
     text = re.sub(r'}\s*"([^"]*?)"\s*:', r'}, "\1":', text)
-    # ] "key": -> ], "key":
+    # Example: ] "key": -> ], "key":
     text = re.sub(r']\s*"([^"]*?)"\s*:', r'], "\1":', text)
     
     # Fix common Grok error: number/boolean followed by string key without comma
-    # 0.7 "refusal_argument" -> 0.7, "refusal_argument"
+    # Example: 0.7 "refusal_argument" -> 0.7, "refusal_argument"
     text = re.sub(r'([0-9.]+|true|false)\s+"([^"]*?)"\s*:', r'\1, "\2":', text)
     
     # Fix array elements missing commas
-    # ["id1" "id2"] -> ["id1", "id2"]
+    # Example: ["id1" "id2"] -> ["id1", "id2"]
     text = re.sub(r'"\s+"([^"]*?)"(?=\s*[,\]])', r'", "\1"', text)
     
     # Strip leading/trailing whitespace
