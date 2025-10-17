@@ -17,7 +17,7 @@ beforeEach(() => {
     push: mockPush,
   })
   mockPush.mockClear()
-  ;(fetch as jest.Mock).mockClear()
+    ; (fetch as jest.Mock).mockClear()
 })
 
 describe('SearchBar', () => {
@@ -39,7 +39,7 @@ describe('SearchBar', () => {
   it('updates query on input change', () => {
     render(<SearchBar />)
     const input = screen.getByRole('textbox')
-    
+
     fireEvent.change(input, { target: { value: 'new search term' } })
     expect(input).toHaveValue('new search term')
   })
@@ -53,10 +53,10 @@ describe('SearchBar', () => {
     render(<SearchBar />)
     const input = screen.getByRole('textbox')
     const form = input.closest('form')
-    
+
     fireEvent.change(input, { target: { value: 'test search' } })
     fireEvent.submit(form!)
-    
+
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/analyzing?session=test-session-123&q=test%20search')
     })
@@ -66,9 +66,9 @@ describe('SearchBar', () => {
     render(<SearchBar />)
     const input = screen.getByRole('textbox')
     const form = input.closest('form')
-    
+
     fireEvent.submit(form!)
-    
+
     expect(mockPush).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
   })
@@ -82,10 +82,10 @@ describe('SearchBar', () => {
     render(<SearchBar />)
     const input = screen.getByRole('textbox')
     const form = input.closest('form')
-    
+
     fireEvent.change(input, { target: { value: '  test search  ' } })
     fireEvent.submit(form!)
-    
+
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/analyzing?session=test-session-123&q=test%20search')
     })
@@ -94,7 +94,7 @@ describe('SearchBar', () => {
   it('updates query when initialQuery prop changes', () => {
     const { rerender } = render(<SearchBar initialQuery="initial" />)
     expect(screen.getByDisplayValue('initial')).toBeInTheDocument()
-    
+
     rerender(<SearchBar initialQuery="updated" />)
     expect(screen.getByDisplayValue('updated')).toBeInTheDocument()
   })
