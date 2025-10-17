@@ -179,7 +179,7 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
               </CardHeader>
               <CardContent>
                 <Button variant="outline" className="w-full" asChild>
-                  <a href={`http://localhost:8000${replay_bundle_url}`} target="_blank">
+                  <a href={`${adjudicatorUrl}${replay_bundle_url}`} target="_blank">
                     <Download className="w-4 h-4 mr-2" />
                     Download
                   </a>
