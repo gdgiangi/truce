@@ -1001,7 +1001,7 @@ def _map_citations(
             continue
         token = str(value)
         for evidence_id, uuid_value in evidence_lookup.items():
-            if token == evidence_id or token in evidence_id:
+            if token == evidence_id:
                 mapped.append(uuid_value)
                 break
     # Remove duplicates while preserving order
