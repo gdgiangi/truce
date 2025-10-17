@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from fastmcp import FastMCP
-from dotenv import load_dotenv
 import aiohttp
+from dotenv import load_dotenv
+from fastmcp import FastMCP
 
 load_dotenv()
 

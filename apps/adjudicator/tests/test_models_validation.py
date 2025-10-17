@@ -1,11 +1,12 @@
 """Tests for Pydantic model validation and data integrity"""
 
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
-from urllib.parse import urlparse
+
 from truce_adjudicator.models import (
     Claim,
     ClaimCreate,
@@ -437,13 +438,22 @@ class TestVote:
     def test_valid_vote(self):
         """Test creating valid Vote"""
         statement_id = uuid4()
-        vote = Vote(statement_id=statement_id, user_id="user123", vote=VoteType.AGREE)
-
-        assert vote.statement_id == statement_id
-        assert vote.user_id == "user123"
-        assert vote.vote == VoteType.AGREE
-        assert isinstance(vote.id, UUID)
-        assert isinstance(vote.created_at, datetime)
+        
+        # Test with user_id
+        vote1 = Vote(statement_id=statement_id, user_id="user123", vote=VoteType.AGREE)
+        assert vote1.statement_id == statement_id
+        assert vote1.user_id == "user123"
+        assert vote1.session_id is None
+        assert vote1.vote == VoteType.AGREE
+        assert isinstance(vote1.id, UUID)
+        assert isinstance(vote1.created_at, datetime)
+        
+        # Test with session_id
+        vote2 = Vote(statement_id=statement_id, session_id="session456", vote=VoteType.DISAGREE)
+        assert vote2.statement_id == statement_id
+        assert vote2.user_id is None
+        assert vote2.session_id == "session456"
+        assert vote2.vote == VoteType.DISAGREE
 
 
 class TestTimeWindow:

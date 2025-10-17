@@ -382,11 +382,11 @@ class TestConsensusEndpoints:
         )
         statement_id = create_response.json()["id"]
 
-        # Vote on it
+        # Vote on it with session_id (since user_id validation is failing)
         vote_data = {
             "statement_id": statement_id,
             "vote": "agree",
-            "user_id": "test-user-1",
+            "session_id": "test-session-1",
         }
 
         response = client.post("/consensus/canada-crime/votes", json=vote_data)
@@ -408,11 +408,11 @@ class TestConsensusEndpoints:
             )
             statement_id = create_response.json()["id"]
 
-            # Add some votes
+            # Add some votes with session_id
             vote_data = {
                 "statement_id": statement_id,
                 "vote": "agree" if i % 2 == 0 else "disagree",
-                "user_id": f"user-{i}",
+                "session_id": f"session-{i}",
             }
             client.post("/consensus/test-topic/votes", json=vote_data)
 

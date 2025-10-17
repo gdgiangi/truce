@@ -1,9 +1,10 @@
 """Tests for the agentic research system."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
 from datetime import datetime
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
+
+import pytest
 
 from truce_adjudicator.models import Claim, Evidence, TimeWindow
 from truce_adjudicator.panel.agentic_research import (
@@ -24,8 +25,6 @@ class TestAgenticResearcher:
             topic="crime_statistics",
             entities=["Canada", "violent crime"],
             evidence=[],
-            time_window=None,
-            metadata={},
         )
 
     @pytest.fixture
@@ -67,7 +66,7 @@ class TestAgenticResearcher:
     @pytest.mark.asyncio
     async def test_research_plan_creation(self, researcher, sample_claim):
         """Test research plan creation."""
-        with patch("fastmcp.Client") as mock_client_class:
+        with patch("truce_adjudicator.panel.agentic_research.Client") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
@@ -83,10 +82,14 @@ class TestAgenticResearcher:
         self, researcher, sample_claim, mock_search_result
     ):
         """Test execution of a research turn."""
-        with patch("fastmcp.Client") as mock_client_class:
+        with patch("truce_adjudicator.panel.agentic_research.Client") as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            mock_client.call_tool.return_value = mock_search_result
+            
+            # Mock the result with .data attribute
+            mock_result = Mock()
+            mock_result.data = mock_search_result
+            mock_client.call_tool.return_value = mock_result
 
             research_plan = await researcher._plan_research(sample_claim, mock_client)
 
@@ -259,8 +262,6 @@ async def test_full_research_flow_mock():
         topic="test_topic",
         entities=["test"],
         evidence=[],
-        time_window=None,
-        metadata={},
     )
 
     researcher = AgenticResearcher(
@@ -295,10 +296,14 @@ async def test_full_research_flow_mock():
         }
     ]
 
-    with patch("fastmcp.Client") as mock_client_class:
+    with patch("truce_adjudicator.panel.agentic_research.Client") as mock_client_class:
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
-        mock_client.call_tool.return_value = mock_results[0]
+        
+        # Mock the result with .data attribute
+        mock_result = Mock()
+        mock_result.data = mock_results[0]
+        mock_client.call_tool.return_value = mock_result
 
         # Mock context manager behavior
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)

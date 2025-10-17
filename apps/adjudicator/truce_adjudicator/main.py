@@ -26,11 +26,19 @@ from .models import (
     Evidence,
     EvidenceRequest,
     PanelRequest,
+    PanelResult,
+    PanelSummary,
     SearchResponse,
     TimeWindow,
     VerificationResponse,
     Vote,
     VoteType,
+)
+from .panel.run_panel import (
+    DEFAULT_PANEL_MODELS,
+    panel_result_to_assessments,
+    reconcile_complementary_verdicts,
+    run_panel_evaluation,
 )
 from .verification import (
     DEFAULT_PROVIDERS,
@@ -41,13 +49,6 @@ from .verification import (
     get_cached_verification,
     store_verification,
 )
-from .panel.run_panel import (
-    DEFAULT_PANEL_MODELS,
-    panel_result_to_assessments,
-    reconcile_complementary_verdicts,
-    run_panel_evaluation,
-)
-from .models import PanelResult, PanelSummary
 
 explorer_agent = ExplorerAgent()
 

@@ -14,8 +14,9 @@ from uuid import UUID
 from dotenv import load_dotenv
 
 try:  # Optional at runtime – fall back to stubs when unavailable
-    import openai
     from typing import TYPE_CHECKING
+
+    import openai
 
     if TYPE_CHECKING:
         AsyncOpenAI = openai.AsyncOpenAI

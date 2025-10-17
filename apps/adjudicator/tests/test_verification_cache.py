@@ -88,6 +88,7 @@ def seeded_claim() -> Tuple[str, Evidence, Evidence]:
 
 def test_cache_hit_after_initial_verification(seeded_claim, monkeypatch):
     from unittest.mock import AsyncMock
+
     from truce_adjudicator.main import explorer_agent
 
     # Mock the explorer agent to prevent real API calls
@@ -109,6 +110,7 @@ def test_cache_hit_after_initial_verification(seeded_claim, monkeypatch):
 
 def test_force_refresh_produces_new_verification(seeded_claim, monkeypatch):
     from unittest.mock import AsyncMock
+
     from truce_adjudicator.main import explorer_agent
 
     # Mock the explorer agent to prevent real API calls
@@ -128,6 +130,7 @@ def test_force_refresh_produces_new_verification(seeded_claim, monkeypatch):
 
 def test_time_window_filters_evidence(seeded_claim, monkeypatch):
     from unittest.mock import AsyncMock
+
     from truce_adjudicator.main import explorer_agent
 
     # Mock the explorer agent to prevent real API calls

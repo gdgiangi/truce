@@ -148,12 +148,12 @@ class Vote(BaseModel):
     vote: VoteType
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    @field_validator("user_id", "session_id", mode="after")
+    @field_validator("session_id", mode="after")
     @classmethod
     def validate_identity(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
         """Ensure either user_id or session_id is provided"""
         user_id = info.data.get("user_id")
-        session_id = info.data.get("session_id")
+        session_id = v
         if user_id is None and session_id is None:
             raise ValueError("Either user_id or session_id must be provided")
         return v

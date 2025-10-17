@@ -7,8 +7,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID, uuid4
 
-from fastmcp import Client
 from dotenv import load_dotenv
+from fastmcp import Client
 
 from ..models import Claim, Evidence, TimeWindow
 
