@@ -66,7 +66,9 @@ class TestAgenticResearcher:
     @pytest.mark.asyncio
     async def test_research_plan_creation(self, researcher, sample_claim):
         """Test research plan creation."""
-        with patch("truce_adjudicator.panel.agentic_research.Client") as mock_client_class:
+        with patch(
+            "truce_adjudicator.panel.agentic_research.Client"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
 
@@ -82,10 +84,12 @@ class TestAgenticResearcher:
         self, researcher, sample_claim, mock_search_result
     ):
         """Test execution of a research turn."""
-        with patch("truce_adjudicator.panel.agentic_research.Client") as mock_client_class:
+        with patch(
+            "truce_adjudicator.panel.agentic_research.Client"
+        ) as mock_client_class:
             mock_client = AsyncMock()
             mock_client_class.return_value = mock_client
-            
+
             # Mock the result with .data attribute
             mock_result = Mock()
             mock_result.data = mock_search_result
@@ -299,7 +303,7 @@ async def test_full_research_flow_mock():
     with patch("truce_adjudicator.panel.agentic_research.Client") as mock_client_class:
         mock_client = AsyncMock()
         mock_client_class.return_value = mock_client
-        
+
         # Mock the result with .data attribute
         mock_result = Mock()
         mock_result.data = mock_results[0]

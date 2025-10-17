@@ -7,6 +7,9 @@ jest.mock('next/navigation', () => ({
   useRouter: jest.fn(),
 }))
 
+// Mock fetch
+global.fetch = jest.fn()
+
 const mockPush = jest.fn()
 
 beforeEach(() => {
@@ -14,6 +17,7 @@ beforeEach(() => {
     push: mockPush,
   })
   mockPush.mockClear()
+  ;(fetch as jest.Mock).mockClear()
 })
 
 describe('SearchBar', () => {
@@ -40,7 +44,12 @@ describe('SearchBar', () => {
     expect(input).toHaveValue('new search term')
   })
 
-  it('navigates to search page on form submit', async () => {
+  it('navigates to analyzing page on form submit', async () => {
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ session_id: 'test-session-123' })
+    })
+
     render(<SearchBar />)
     const input = screen.getByRole('textbox')
     const form = input.closest('form')
@@ -49,7 +58,7 @@ describe('SearchBar', () => {
     fireEvent.submit(form!)
     
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/search?q=test+search')
+      expect(mockPush).toHaveBeenCalledWith('/analyzing?session=test-session-123&q=test%20search')
     })
   })
 
@@ -61,9 +70,15 @@ describe('SearchBar', () => {
     fireEvent.submit(form!)
     
     expect(mockPush).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('trims whitespace from query before navigation', async () => {
+    (fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ session_id: 'test-session-123' })
+    })
+
     render(<SearchBar />)
     const input = screen.getByRole('textbox')
     const form = input.closest('form')
@@ -72,7 +87,7 @@ describe('SearchBar', () => {
     fireEvent.submit(form!)
     
     await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/search?q=test+search')
+      expect(mockPush).toHaveBeenCalledWith('/analyzing?session=test-session-123&q=test%20search')
     })
   })
 

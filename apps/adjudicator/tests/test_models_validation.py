@@ -438,7 +438,7 @@ class TestVote:
     def test_valid_vote(self):
         """Test creating valid Vote"""
         statement_id = uuid4()
-        
+
         # Test with user_id
         vote1 = Vote(statement_id=statement_id, user_id="user123", vote=VoteType.AGREE)
         assert vote1.statement_id == statement_id
@@ -447,9 +447,11 @@ class TestVote:
         assert vote1.vote == VoteType.AGREE
         assert isinstance(vote1.id, UUID)
         assert isinstance(vote1.created_at, datetime)
-        
+
         # Test with session_id
-        vote2 = Vote(statement_id=statement_id, session_id="session456", vote=VoteType.DISAGREE)
+        vote2 = Vote(
+            statement_id=statement_id, session_id="session456", vote=VoteType.DISAGREE
+        )
         assert vote2.statement_id == statement_id
         assert vote2.user_id is None
         assert vote2.session_id == "session456"
