@@ -12,7 +12,7 @@ services:
     working_dir: /app
     command: fastmcp run truce_adjudicator/mcp/brave_search_server.py:mcp --transport http --host 0.0.0.0 --port 8888
     healthcheck:
-      test: ["CMD", "curl", "-s", "http://localhost:8888/mcp", "||", "exit", "0"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8888/mcp || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
