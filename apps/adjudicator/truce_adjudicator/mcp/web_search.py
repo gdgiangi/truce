@@ -38,23 +38,28 @@ class RateLimiter:
     
     async def acquire(self):
         """Acquire permission to make an API call, blocking if necessary."""
-        async with self._lock:
-            now = asyncio.get_event_loop().time()
-            
-            # Remove old calls outside the time window
-            self.calls = [call_time for call_time in self.calls if now - call_time < self.time_window]
-            
-            # If we're at the limit, wait until we can make another call
-            if len(self.calls) >= self.max_calls:
-                sleep_time = self.calls[0] + self.time_window - now + 0.1  # Small buffer
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                    return await self.acquire()  # Retry after waiting
-            
-            # Record this call
-            self.calls.append(now)
-
-
+        while True:
+            async with self._lock:
+                now = asyncio.get_event_loop().time()
+                
+                # Remove old calls outside the time window
+                self.calls = [call_time for call_time in self.calls if now - call_time < self.time_window]
+                
+                # If we're at the limit, wait until we can make another call
+                if len(self.calls) >= self.max_calls:
+                    sleep_time = self.calls[0] + self.time_window - now + 0.1  # Small buffer
+                    if sleep_time > 0:
+                        pass  # Will sleep outside the lock
+                    else:
+                        # Record this call
+                        self.calls.append(now)
+                        return
+                else:
+                    # Record this call
+                    self.calls.append(now)
+                    return
+            # Sleep outside the lock to avoid blocking other coroutines
+            await asyncio.sleep(sleep_time)
 class BraveGroundingAPI:
     """Brave AI Grounding API client for evidence-based search with citations."""
 
