@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 try:  # Optional at runtime – fall back to stubs when unavailable
     import openai
     from typing import TYPE_CHECKING
+
     if TYPE_CHECKING:
         AsyncOpenAI = openai.AsyncOpenAI
     else:
@@ -80,20 +81,24 @@ Rules:
 - Your confidence should reflect the overall weight of evidence, not just the strongest individual piece."""
 
 
-def build_normalized_prompt(claim: Claim, window: Optional[TimeWindow]) -> Dict[str, Any]:
+def build_normalized_prompt(
+    claim: Claim, window: Optional[TimeWindow]
+) -> Dict[str, Any]:
     """Construct normalized prompt payload for provider adapters."""
     window = window or TimeWindow()
     evidence_payload: List[Dict[str, Any]] = []
-    for evidence in sorted(claim.evidence, key=lambda e: e.published_at or datetime.min):
+    for evidence in sorted(
+        claim.evidence, key=lambda e: e.published_at or datetime.min
+    ):
         evidence_payload.append(
             {
                 "id": str(evidence.id),
                 "publisher": evidence.publisher,
                 "snippet": evidence.snippet,
                 "url": evidence.url,
-                "published_at": evidence.published_at.isoformat()
-                if evidence.published_at
-                else None,
+                "published_at": (
+                    evidence.published_at.isoformat() if evidence.published_at else None
+                ),
             }
         )
 
@@ -130,10 +135,10 @@ class BaseProviderAdapter:
         evidence_lookup: Dict[str, UUID],
     ) -> PanelModelVerdict:
         from ..models import ArgumentWithEvidence, CitationLink
-        
+
         payload = await self._call_provider(prompt)
         parsed = _ensure_payload_dict(payload)
-        
+
         # Parse approval argument
         approval_data = parsed.get("approval_argument", {})
         approval_arg = approval_data.get("argument", "") or _fallback_argument(
@@ -145,17 +150,25 @@ class BaseProviderAdapter:
             approval_arg = _smart_truncate(approval_arg, 2000)
         elif len(approval_arg) < 50:
             approval_arg = _pad_argument(approval_arg, "approval")
-        approval_evidence = _map_citations(approval_data.get("evidence_ids", []), evidence_lookup)
-        approval_confidence = _parse_confidence(approval_data.get("confidence"), default=0.5)
-        
+        approval_evidence = _map_citations(
+            approval_data.get("evidence_ids", []), evidence_lookup
+        )
+        approval_confidence = _parse_confidence(
+            approval_data.get("confidence"), default=0.5
+        )
+
         # Create reverse lookup: str(uuid) -> uuid for citation extraction
-        reverse_evidence_lookup = {str(uuid_val): uuid_val for uuid_val in evidence_lookup.values()}
-        
+        reverse_evidence_lookup = {
+            str(uuid_val): uuid_val for uuid_val in evidence_lookup.values()
+        }
+
         # Extract citation links from argument text
-        approval_citation_links = _extract_citation_links(approval_arg, reverse_evidence_lookup)
+        approval_citation_links = _extract_citation_links(
+            approval_arg, reverse_evidence_lookup
+        )
         # Clean the argument text for display (remove citation markers)
         approval_arg_clean = _clean_argument_text(approval_arg)
-        
+
         # Parse refusal argument
         refusal_data = parsed.get("refusal_argument", {})
         refusal_arg = refusal_data.get("argument", "") or _fallback_argument(
@@ -167,11 +180,17 @@ class BaseProviderAdapter:
             refusal_arg = _smart_truncate(refusal_arg, 2000)
         elif len(refusal_arg) < 50:
             refusal_arg = _pad_argument(refusal_arg, "refusal")
-        refusal_evidence = _map_citations(refusal_data.get("evidence_ids", []), evidence_lookup)
-        refusal_confidence = _parse_confidence(refusal_data.get("confidence"), default=0.5)
-        
-        # Extract citation links from argument text  
-        refusal_citation_links = _extract_citation_links(refusal_arg, reverse_evidence_lookup)
+        refusal_evidence = _map_citations(
+            refusal_data.get("evidence_ids", []), evidence_lookup
+        )
+        refusal_confidence = _parse_confidence(
+            refusal_data.get("confidence"), default=0.5
+        )
+
+        # Extract citation links from argument text
+        refusal_citation_links = _extract_citation_links(
+            refusal_arg, reverse_evidence_lookup
+        )
         # Clean the argument text for display (remove citation markers)
         refusal_arg_clean = _clean_argument_text(refusal_arg)
 
@@ -206,17 +225,17 @@ class BaseProviderAdapter:
                 raise exc  # Let the outer evaluation loop handle this as a failure
             else:
                 return self._fallback(prompt, error=str(exc))
-    
+
     def _should_fail_on_error(self, exc: Exception) -> bool:
         """
         Determine if an error should cause the model to fail completely
         rather than fall back to stub responses.
-        
+
         JSON parsing errors and response format errors should cause failure,
         while missing API keys should fall back to stubs.
         """
         error_msg = str(exc).lower()
-        
+
         # These errors should cause model failure (not stubs)
         fatal_patterns = [
             "could not parse provider payload",
@@ -226,11 +245,14 @@ class BaseProviderAdapter:
             "invalid json",
             "unterminated string",
         ]
-        
+
         # However, for JSON parsing errors, let's be more lenient and try to recover
-        if any(pattern in error_msg for pattern in ["expecting ',' delimiter", "json decode", "invalid json"]):
+        if any(
+            pattern in error_msg
+            for pattern in ["expecting ',' delimiter", "json decode", "invalid json"]
+        ):
             return False  # Don't fail, let the improved JSON parser handle it
-        
+
         return any(pattern in error_msg for pattern in fatal_patterns)
 
     async def _invoke(self, prompt: Dict[str, Any]) -> Any:
@@ -248,7 +270,9 @@ class GPTProviderAdapter(BaseProviderAdapter):
         self.provider_id = f"openai:{model}"
         self._client: Optional[Any] = None if openai else None
 
-    async def _invoke(self, prompt: Dict[str, Any]) -> Any:  # pragma: no cover - network call
+    async def _invoke(
+        self, prompt: Dict[str, Any]
+    ) -> Any:  # pragma: no cover - network call
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key or openai is None:
             raise RuntimeError("OpenAI API key not configured")
@@ -270,7 +294,7 @@ class GPTProviderAdapter(BaseProviderAdapter):
             response_format={"type": "json_object"},
         )
         content = completion.choices[0].message.content if completion.choices else ""
-        
+
         print(f"OpenAI ({self.model}) response preview: {content[:200]}")
         return _ensure_payload_dict(content)
 
@@ -283,16 +307,19 @@ class GrokProviderAdapter(BaseProviderAdapter):
         self.provider_id = f"xai:{model}"
         self._client: Optional[Any] = None if openai else None
 
-    async def _invoke(self, prompt: Dict[str, Any]) -> Any:  # pragma: no cover - network call
+    async def _invoke(
+        self, prompt: Dict[str, Any]
+    ) -> Any:  # pragma: no cover - network call
         api_key = os.getenv("XAI_API_KEY")
         if not api_key or openai is None:
-            raise RuntimeError("XAI API key not configured or OpenAI library not available")
+            raise RuntimeError(
+                "XAI API key not configured or OpenAI library not available"
+            )
 
         if self._client is None:
             # XAI uses OpenAI-compatible API
             self._client = openai.AsyncOpenAI(
-                api_key=api_key,
-                base_url="https://api.x.ai/v1"
+                api_key=api_key, base_url="https://api.x.ai/v1"
             )
 
         serialized = json.dumps(prompt, ensure_ascii=False)
@@ -307,7 +334,7 @@ class GrokProviderAdapter(BaseProviderAdapter):
             temperature=0.1,
         )
         content = completion.choices[0].message.content if completion.choices else ""
-        
+
         print(f"Grok ({self.model}) response preview: {content[:200]}")
         return _ensure_payload_dict(content)
 
@@ -320,7 +347,9 @@ class GeminiProviderAdapter(BaseProviderAdapter):
         self.provider_id = f"google:{model}"
         self._client: Optional[Any] = None
 
-    async def _invoke(self, prompt: Dict[str, Any]) -> Any:  # pragma: no cover - network call
+    async def _invoke(
+        self, prompt: Dict[str, Any]
+    ) -> Any:  # pragma: no cover - network call
         # Support both env var names; prefer GEMINI_API_KEY per latest docs
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
@@ -424,7 +453,7 @@ Respond with ONLY the JSON object. No markdown, no explanations, no code blocks.
         if self._client is None:
             self._client = openai.AsyncOpenAI(
                 api_key=api_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
 
         serialized = json.dumps(prompt, ensure_ascii=False)
@@ -450,20 +479,25 @@ class AnthropicProviderAdapter(BaseProviderAdapter):
         self.provider_id = f"anthropic:{model}"
         self._client: Optional[Any] = None
 
-    async def _invoke(self, prompt: Dict[str, Any]) -> Any:  # pragma: no cover - network call
+    async def _invoke(
+        self, prompt: Dict[str, Any]
+    ) -> Any:  # pragma: no cover - network call
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError("Anthropic API key not configured")
 
         try:
             import anthropic
+
             if self._client is None:
                 self._client = anthropic.AsyncAnthropic(api_key=api_key)
         except ImportError:
-            raise RuntimeError("Anthropic library not available (pip install anthropic)")
+            raise RuntimeError(
+                "Anthropic library not available (pip install anthropic)"
+            )
 
         serialized = json.dumps(prompt, ensure_ascii=False)
-        
+
         # Use the model name as-is (should be full Anthropic model name)
         anthropic_model = self.model
 
@@ -472,9 +506,7 @@ class AnthropicProviderAdapter(BaseProviderAdapter):
             max_tokens=1500,
             temperature=0.1,
             system=SYSTEM_PROMPT,
-            messages=[
-                {"role": "user", "content": serialized}
-            ]
+            messages=[{"role": "user", "content": serialized}],
         )
         content = message.content[0].text if message.content else ""
         return _ensure_payload_dict(content)
@@ -503,36 +535,37 @@ async def run_agentic_panel_evaluation(
 ) -> PanelResult:
     """
     Run agentic panel evaluation where each agent conducts independent research.
-    
+
     Args:
         claim: The claim to evaluate (may have minimal or no initial evidence)
         models: List of model names to use as panel agents
         time_window: Optional time window for research
         session_id: Optional session ID for progress updates
         mcp_server_url: URL of the FastMCP Brave Search server
-    
+
     Returns:
         PanelResult with independently researched evidence and verdicts
     """
     selected_models = list(models) if models else DEFAULT_PANEL_MODELS
     evidence_pool = SharedEvidencePool()
-    
+
     # Phase 1: Independent Agentic Research
     if session_id:
         from ..main import emit_agent_update
+
         await emit_agent_update(
-            session_id, 
-            "Agentic Panel Coordinator", 
-            "Starting independent research phase", 
+            session_id,
+            "Agentic Panel Coordinator",
+            "Starting independent research phase",
             f"Each of {len(selected_models)} agents will conduct independent research on: {claim.text}",
             "research_phase",
-            []
+            [],
         )
-    
+
     # Create researchers for each model/agent
     researchers = []
     research_tasks = []
-    
+
     # Use a neutralized version of the claim text for evidence discovery so that
     # contradictory phrasings (e.g., rising vs declining) share the same evidence pool.
     neutral_text = _neutralize_claim_text(claim.text)
@@ -549,17 +582,17 @@ async def run_agentic_panel_evaluation(
             agent_name=f"{model_name}_researcher",
             mcp_server_url=mcp_server_url,
             max_search_turns=5,
-            max_sources_per_turn=8
+            max_sources_per_turn=8,
         )
         researchers.append((model_name, researcher))
-        
+
         # Start research task
         task = researcher.conduct_research(research_claim, time_window, session_id)
         research_tasks.append(task)
-    
+
     # Wait for all research to complete
     research_results = await asyncio.gather(*research_tasks, return_exceptions=True)
-    
+
     # Collect all evidence in shared pool
     total_evidence_collected = 0
     for i, (model_name, researcher) in enumerate(researchers):
@@ -567,10 +600,10 @@ async def run_agentic_panel_evaluation(
         if isinstance(evidence_list, Exception):
             print(f"Research failed for {model_name}: {evidence_list}")
             evidence_list = []
-        
+
         added_count = await evidence_pool.add_evidence(evidence_list, model_name)
         total_evidence_collected += added_count
-    
+
     if session_id:
         evidence_summary = evidence_pool.get_evidence_summary()
         await emit_agent_update(
@@ -579,9 +612,9 @@ async def run_agentic_panel_evaluation(
             f"Research phase complete: {total_evidence_collected} evidence items collected",
             f"Collected evidence from {evidence_summary['unique_domains']} domains and {evidence_summary['unique_publishers']} publishers",
             "research_complete",
-            list(evidence_summary['publishers'][:5])
+            list(evidence_summary["publishers"][:5]),
         )
-    
+
     # Phase 2: Create enriched claim with all collected evidence
     all_evidence = evidence_pool.get_all_evidence()
     enriched_claim = Claim(
@@ -591,7 +624,7 @@ async def run_agentic_panel_evaluation(
         entities=claim.entities,
         evidence=all_evidence,  # Use all researched evidence
     )
-    
+
     # Phase 3: Independent Verdict Formation
     if session_id:
         await emit_agent_update(
@@ -600,13 +633,13 @@ async def run_agentic_panel_evaluation(
             "Starting verdict formation phase",
             f"Each agent will independently analyze all {len(all_evidence)} evidence items to form their verdict",
             "verdict_phase",
-            []
+            [],
         )
-    
+
     # Build prompt with all collected evidence
     prompt = build_normalized_prompt(enriched_claim, time_window)
     evidence_lookup = {str(ev.id): ev.id for ev in all_evidence}
-    
+
     # Get verdicts from each model independently
     panel_models: List[PanelModelVerdict] = []
     for model_name in selected_models:
@@ -617,9 +650,9 @@ async def run_agentic_panel_evaluation(
                 f"Analyzing evidence for independent verdict",
                 f"Evaluating {len(all_evidence)} evidence sources to determine claim veracity",
                 "verdict_analysis",
-                []
+                [],
             )
-        
+
         try:
             adapter = _resolve_adapter(model_name)
             verdict = await adapter.evaluate(enriched_claim, prompt, evidence_lookup)
@@ -629,7 +662,7 @@ async def run_agentic_panel_evaluation(
             print(f"Model {model_name} failed: {e}")
             failed_verdict = _create_failed_verdict(model_name, str(e), prompt)
             panel_models.append(failed_verdict)
-            
+
             if session_id:
                 await emit_agent_update(
                     session_id,
@@ -637,9 +670,9 @@ async def run_agentic_panel_evaluation(
                     f"Evaluation failed",
                     f"Error: {str(e)}",
                     "error",
-                    []
+                    [],
                 )
-    
+
     # Phase 4: Update original claim with collected evidence
     claim.evidence.extend(all_evidence)
     # Remove duplicates based on URL while preserving order
@@ -650,10 +683,10 @@ async def run_agentic_panel_evaluation(
             seen_urls.add(evidence.url)
             unique_evidence.append(evidence)
     claim.evidence = unique_evidence
-    
+
     # Phase 5: Aggregate Panel Results
     summary = aggregate_panel(panel_models)
-    
+
     if session_id:
         verdict_str = summary.verdict.value if summary.verdict else "mixed"
         await emit_agent_update(
@@ -662,9 +695,9 @@ async def run_agentic_panel_evaluation(
             f"Panel evaluation complete: {verdict_str}",
             f"Final verdict: {verdict_str} with {summary.support_confidence:.2f} support / {summary.refute_confidence:.2f} refute confidence from {summary.model_count} independent agents",
             "complete",
-            []
+            [],
         )
-    
+
     return PanelResult(prompt=prompt, models=panel_models, summary=summary)
 
 
@@ -678,7 +711,7 @@ async def run_panel_evaluation(
 ) -> PanelResult:
     """
     Run panel evaluation with optional agentic research.
-    
+
     Args:
         claim: The claim to evaluate
         models: List of model names to use as panel agents
@@ -686,7 +719,7 @@ async def run_panel_evaluation(
         session_id: Optional session ID for progress updates
         enable_agentic_research: Whether to enable agentic research mode
         mcp_server_url: URL of the FastMCP Brave Search server
-    
+
     Returns:
         PanelResult with verdicts and evidence
     """
@@ -716,10 +749,10 @@ async def run_panel_evaluation(
 def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:
     """
     Aggregate per-model verdicts by normalizing and averaging confidences.
-    
+
     Each model provides approval and refusal confidence scores that are normalized
     to sum to 1.0 before aggregation, ensuring logical consistency.
-    
+
     Failed models are excluded from aggregation.
     """
     if not models:
@@ -732,7 +765,7 @@ def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:
 
     # Filter out failed models from aggregation
     successful_models = [m for m in models if not m.failed]
-    
+
     if not successful_models:
         return PanelSummary(
             support_confidence=0.0,
@@ -744,11 +777,11 @@ def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:
     # Normalize each model's confidences to sum to 1.0, then average
     normalized_support_total = 0.0
     normalized_refute_total = 0.0
-    
+
     for model in successful_models:
         approval_conf = model.approval_argument.confidence
         refusal_conf = model.refusal_argument.confidence
-        
+
         # Normalize so they sum to 1.0
         total = approval_conf + refusal_conf
         if total > 0:
@@ -758,16 +791,16 @@ def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:
             # If both are 0, split evenly
             normalized_approval = 0.5
             normalized_refusal = 0.5
-        
+
         normalized_support_total += normalized_approval
         normalized_refute_total += normalized_refusal
-    
+
     support_confidence = normalized_support_total / len(successful_models)
     refute_confidence = normalized_refute_total / len(successful_models)
-    
+
     # Determine verdict based on which confidence is higher
     confidence_diff = abs(support_confidence - refute_confidence)
-    
+
     if support_confidence > refute_confidence:
         if confidence_diff >= 0.3:  # Strong support (>65% vs <35%)
             verdict = PanelVerdict.TRUE
@@ -796,7 +829,7 @@ def aggregate_panel(models: Sequence[PanelModelVerdict]) -> PanelSummary:
 def panel_result_to_assessments(panel: PanelResult) -> List[ModelAssessment]:
     """Convert panel verdicts into legacy ModelAssessment structures."""
     assessments: List[ModelAssessment] = []
-    
+
     for model in panel.models:
         # Use the stronger argument (higher confidence) as the primary verdict
         if model.approval_argument.confidence > model.refusal_argument.confidence:
@@ -811,10 +844,17 @@ def panel_result_to_assessments(panel: PanelResult) -> List[ModelAssessment]:
             citations = model.refusal_argument.evidence_ids
         else:
             verdict = VerdictType.MIXED
-            confidence = (model.approval_argument.confidence + model.refusal_argument.confidence) / 2
+            confidence = (
+                model.approval_argument.confidence + model.refusal_argument.confidence
+            ) / 2
             rationale = f"Mixed: Approval ({model.approval_argument.confidence:.2f}) - {model.approval_argument.argument[:100]}... Refusal ({model.refusal_argument.confidence:.2f}) - {model.refusal_argument.argument[:100]}..."
-            citations = list(set(model.approval_argument.evidence_ids + model.refusal_argument.evidence_ids))
-        
+            citations = list(
+                set(
+                    model.approval_argument.evidence_ids
+                    + model.refusal_argument.evidence_ids
+                )
+            )
+
         assessments.append(
             ModelAssessment(
                 model_name=model.model,
@@ -840,16 +880,16 @@ def _ensure_payload_dict(raw: Any) -> Dict[str, Any]:
         text = raw.strip()
         if not text:
             raise ValueError("Empty payload")
-        
+
         # Remove markdown code blocks if present
         text = _strip_markdown_fences(text)
-        
+
         # Try direct parse first
         try:
             return json.loads(text)
         except json.JSONDecodeError as e:
             print(f"Initial JSON parse failed: {e}")
-            
+
             # Try to repair the text directly first
             repaired_text = _repair_json(text)
             try:
@@ -858,7 +898,7 @@ def _ensure_payload_dict(raw: Any) -> Dict[str, Any]:
                 return result
             except json.JSONDecodeError:
                 pass  # Continue to extraction
-            
+
             # Try to extract JSON block from potentially wrapped response
             block = _extract_json_block(text)
             if block:
@@ -874,19 +914,19 @@ def _ensure_payload_dict(raw: Any) -> Dict[str, Any]:
                     print(f"📄 Original response length: {len(text)}")
                     print(f"📄 Original response preview: {text[:500]}")
                     print(f"🔧 Repaired block preview: {repaired[:500]}")
-                    
+
                     # Show the specific problem area
                     try:
-                        error_pos = inner_e.pos if hasattr(inner_e, 'pos') else 0
+                        error_pos = inner_e.pos if hasattr(inner_e, "pos") else 0
                         context_start = max(0, error_pos - 50)
                         context_end = min(len(repaired), error_pos + 50)
                         print(f"❌ Error near position {error_pos}:")
                         print(f"   ...{repaired[context_start:context_end]}...")
                     except:
                         pass
-                    
+
                     raise ValueError(f"Could not parse provider payload: {inner_e}")
-            
+
             print(f"❌ JSON parse error (no block found): {e}")
             print(f"📄 Response preview: {text[:500]}")
             raise ValueError(f"Could not parse provider payload: {e}")
@@ -896,21 +936,21 @@ def _ensure_payload_dict(raw: Any) -> Dict[str, Any]:
 def _strip_markdown_fences(text: str) -> str:
     """Remove markdown code block fences like ```json ... ```"""
     # Remove ```json at start and ``` at end
-    text = re.sub(r'^```(?:json)?\s*', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'\s*```\s*$', '', text)
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text)
     return text.strip()
 
 
 def _extract_json_block(text: str) -> Optional[str]:
     """Extract JSON object from text, handling nested braces."""
-    match = re.search(r'\{.*\}', text, re.DOTALL)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
     return match.group(0) if match else None
 
 
 def _repair_json(text: str) -> str:
     """
     Attempt to repair common JSON formatting issues.
-    
+
     This function handles multiple common LLM JSON generation errors:
     - Trailing commas before closing braces/brackets
     - Multiple consecutive commas
@@ -921,54 +961,54 @@ def _repair_json(text: str) -> str:
     """
     # Remove comments (// style) - do this first
     # Removes single-line comments starting with //
-    text = re.sub(r'//.*$', '', text, flags=re.MULTILINE)
-    
+    text = re.sub(r"//.*$", "", text, flags=re.MULTILINE)
+
     # Remove comments (/* */ style)
     # Removes multi-line comments enclosed in /* ... */
-    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
-    
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
     # Remove trailing commas before closing braces/brackets (most common issue)
     # Example: {"a": 1,} -> {"a": 1}
     # Handles cases like: [1, 2,] or {"key": "value",}
-    text = re.sub(r',(\s*[}\]])', r'\1', text)
-    
+    text = re.sub(r",(\s*[}\]])", r"\1", text)
+
     # Remove multiple consecutive commas
     # Example: {"a": 1,, "b": 2} -> {"a": 1, "b": 2}
-    text = re.sub(r',\s*,+', ',', text)
-    
+    text = re.sub(r",\s*,+", ",", text)
+
     # Fix missing commas between string values and next key (common LLM error)
     # Example: "value1" "key2" -> "value1", "key2"
     text = re.sub(r'"\s+(?=")', '", ', text)
-    
+
     # Fix missing commas between } and { (adjacent objects)
     # Example: {"a": 1}{"b": 2} -> {"a": 1}, {"b": 2}
-    text = re.sub(r'}\s*{', '}, {', text)
-    
+    text = re.sub(r"}\s*{", "}, {", text)
+
     # Fix missing commas between ] and [ (adjacent arrays)
     # Example: [1][2] -> [1], [2]
-    text = re.sub(r']\s*\[', '], [', text)
-    
+    text = re.sub(r"]\s*\[", "], [", text)
+
     # Fix missing commas between value and key (Grok common error)
     # Example: "value" "key": -> "value", "key":
     text = re.sub(r'"\s+"([^"]*?)"\s*:', r'", "\1":', text)
-    
+
     # Fix missing comma after object/array before next property
     # Example: } "key": -> }, "key":
     text = re.sub(r'}\s*"([^"]*?)"\s*:', r'}, "\1":', text)
     # Example: ] "key": -> ], "key":
     text = re.sub(r']\s*"([^"]*?)"\s*:', r'], "\1":', text)
-    
+
     # Fix common Grok error: number/boolean followed by string key without comma
     # Example: 0.7 "refusal_argument" -> 0.7, "refusal_argument"
     text = re.sub(r'([0-9.]+|true|false)\s+"([^"]*?)"\s*:', r'\1, "\2":', text)
-    
+
     # Fix array elements missing commas
     # Example: ["id1" "id2"] -> ["id1", "id2"]
     text = re.sub(r'"\s+"([^"]*?)"(?=\s*[,\]])', r'", "\1"', text)
-    
+
     # Strip leading/trailing whitespace
     text = text.strip()
-    
+
     return text
 
 
@@ -1035,7 +1075,7 @@ def _fallback_argument(
     """Generate fallback argument when provider response is incomplete."""
     claim_text = prompt.get("claim", {}).get("text", "the claim")
     evidence_count = prompt.get("evidence_count", 0)
-    
+
     if argument_type == "approval":
         return (
             f"{provider_id} ({model}) fallback approval argument. "
@@ -1050,74 +1090,82 @@ def _fallback_argument(
         )
 
 
-def _extract_citation_links(argument: str, evidence_lookup: Dict[str, UUID]) -> List[CitationLink]:
+def _extract_citation_links(
+    argument: str, evidence_lookup: Dict[str, UUID]
+) -> List[CitationLink]:
     """Extract citation links from argument text that contains evidence ID patterns."""
     import re
-    
+
     citation_links = []
-    
+
     # Pattern to match both formats: (evidence_id: uuid) and (uuid)
     patterns = [
-        r'\(evidence_id:\s*([a-fA-F0-9-]+)\)',  # Original format
-        r'\(([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})\)',  # Direct UUID format
+        r"\(evidence_id:\s*([a-fA-F0-9-]+)\)",  # Original format
+        r"\(([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})\)",  # Direct UUID format
     ]
-    
+
     for pattern in patterns:
         for match in re.finditer(pattern, argument):
             evidence_id_str = match.group(1)
-            
+
             # Check if this evidence_id exists in our lookup
             if evidence_id_str in evidence_lookup:
                 evidence_id = evidence_lookup[evidence_id_str]
-                
+
                 # Find the start of the sentence or clause that precedes this citation
                 citation_end = match.start()
-                
+
                 # Look backwards for sentence boundaries
                 text_before = argument[:citation_end]
                 sentence_starts = [0]  # Start of text
-                
+
                 # Find sentence boundaries (., !, ?)
                 for i, char in enumerate(text_before):
-                    if char in '.!?' and i < len(text_before) - 1:
+                    if char in ".!?" and i < len(text_before) - 1:
                         # Make sure it's not an abbreviation or decimal
-                        if text_before[i+1] == ' ' and (i == 0 or not text_before[i-1].isdigit()):
-                            sentence_starts.append(i + 2)  # Skip the punctuation and space
-                
+                        if text_before[i + 1] == " " and (
+                            i == 0 or not text_before[i - 1].isdigit()
+                        ):
+                            sentence_starts.append(
+                                i + 2
+                            )  # Skip the punctuation and space
+
                 # Take the last sentence start before the citation
                 citation_start = sentence_starts[-1]
-                
+
                 # Extract the text being cited (without the citation marker)
                 cited_text = argument[citation_start:citation_end].strip()
-                
+
                 if cited_text:  # Only add if we have meaningful text
-                    citation_links.append(CitationLink(
-                        start=citation_start,
-                        end=citation_end,
-                        evidence_id=evidence_id,
-                        text=cited_text
-                    ))
-    
+                    citation_links.append(
+                        CitationLink(
+                            start=citation_start,
+                            end=citation_end,
+                            evidence_id=evidence_id,
+                            text=cited_text,
+                        )
+                    )
+
     return citation_links
 
 
 def _clean_argument_text(argument: str) -> str:
     """Remove citation markers from argument text for display."""
     import re
-    
+
     # Remove both citation formats
     patterns = [
-        r'\s*\(evidence_id:\s*[a-fA-F0-9-]+\)',  # Original format
-        r'\s*\([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\)',  # Direct UUID format
+        r"\s*\(evidence_id:\s*[a-fA-F0-9-]+\)",  # Original format
+        r"\s*\([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\)",  # Direct UUID format
     ]
-    
+
     cleaned = argument
     for pattern in patterns:
-        cleaned = re.sub(pattern, '', cleaned)
-    
+        cleaned = re.sub(pattern, "", cleaned)
+
     # Clean up any double spaces
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
     return cleaned
 
 
@@ -1125,28 +1173,28 @@ def _smart_truncate(text: str, max_length: int) -> str:
     """Truncate text at sentence boundary to avoid cutting off mid-sentence."""
     if len(text) <= max_length:
         return text
-    
+
     # Try to find a sentence ending within the limit
     truncated = text[:max_length]
-    sentence_endings = ['. ', '! ', '? ']
-    
+    sentence_endings = [". ", "! ", "? "]
+
     # Look for the last sentence ending within the limit
     best_end = -1
     for ending in sentence_endings:
         pos = truncated.rfind(ending)
-        if pos > max_length * 0.7:  # Only truncate if we keep at least 70% 
+        if pos > max_length * 0.7:  # Only truncate if we keep at least 70%
             best_end = max(best_end, pos + 1)
-    
+
     if best_end > 0:
         return text[:best_end].strip()
-    
+
     # Fallback to word boundary
-    words = text[:max_length].rsplit(' ', 1)
+    words = text[:max_length].rsplit(" ", 1)
     if len(words) > 1:
         return words[0] + "..."
-    
+
     # Last resort: hard truncate
-    return text[:max_length-3] + "..."
+    return text[: max_length - 3] + "..."
 
 
 def _pad_argument(text: str, argument_type: str) -> str:
@@ -1154,14 +1202,18 @@ def _pad_argument(text: str, argument_type: str) -> str:
     if len(text) >= 50:
         # If already long enough, just ensure it's not too long
         return _smart_truncate(text, 2000)
-    
+
     filler = (
         f" This {argument_type} argument includes analysis of available evidence "
         "with explicit citation of source identifiers for transparency."
     )
     combined = (text or f"No {argument_type} argument provided.") + filler
     # Ensure we don't exceed max length
-    return _smart_truncate(combined, 2000) if len(combined) >= 50 else combined.ljust(50, " ")
+    return (
+        _smart_truncate(combined, 2000)
+        if len(combined) >= 50
+        else combined.ljust(50, " ")
+    )
 
 
 def _generate_stub_payload(
@@ -1173,26 +1225,26 @@ def _generate_stub_payload(
     evidence = prompt.get("evidence", [])
     evidence_ids = [ev["id"] for ev in evidence[:3]] if evidence else []
     profile = _stub_profile(provider_id)
-    
+
     # Build evidence sources text
     evidence_sources = []
     for ev in evidence[:3]:
         publisher = ev.get("publisher", "Unknown")
         evidence_sources.append(publisher)
     sources_text = ", ".join(evidence_sources) if evidence_sources else "no sources"
-    
+
     approval_arg = (
         f"{provider_id} ({model}) stub approval analysis. "
         f"Reviewed {len(evidence)} evidence items from {sources_text}. "
         "This is a deterministic offline assessment for testing."
     )
-    
+
     refusal_arg = (
         f"{provider_id} ({model}) stub refusal analysis. "
         f"Reviewed {len(evidence)} evidence items from {sources_text}. "
         "This is a deterministic offline assessment for testing."
     )
-    
+
     if error:
         approval_arg += f" Note: {error}."
         refusal_arg += f" Note: {error}."
@@ -1241,15 +1293,17 @@ def _generate_stub_payload(
     return payload
 
 
-def _create_failed_verdict(model_name: str, error: str, prompt: Dict[str, Any]) -> PanelModelVerdict:
+def _create_failed_verdict(
+    model_name: str, error: str, prompt: Dict[str, Any]
+) -> PanelModelVerdict:
     """
     Create a failed verdict for a model that couldn't complete evaluation.
-    
+
     This verdict will be marked as failed and excluded from aggregation,
     but included in the results for transparency.
     """
     from ..models import ArgumentWithEvidence, PanelModelVerdict
-    
+
     # Determine provider_id from model name
     if "gpt" in model_name.lower() or "o1" in model_name.lower():
         provider_id = f"openai:{model_name}"
@@ -1261,18 +1315,20 @@ def _create_failed_verdict(model_name: str, error: str, prompt: Dict[str, Any]) 
         provider_id = f"anthropic:{model_name}"
     else:
         provider_id = f"unknown:{model_name}"
-    
+
     # Create placeholder arguments with 0 confidence
     placeholder_arg = ArgumentWithEvidence(
         argument=f"Model evaluation failed: {error}",
         evidence_ids=[],
         confidence=0.0,
     )
-    
+
     # Extract more details for error_details field
     evidence_count = prompt.get("evidence_count", 0)
-    error_details = f"Failed to evaluate {evidence_count} evidence items. Error: {error}"
-    
+    error_details = (
+        f"Failed to evaluate {evidence_count} evidence items. Error: {error}"
+    )
+
     return PanelModelVerdict(
         provider_id=provider_id,
         model=model_name,
@@ -1301,8 +1357,26 @@ def _stub_profile(provider_id: str) -> Dict[str, Any]:
 def _infer_claim_direction(text: str) -> Optional[str]:
     """Infer direction of claim: returns "up", "down", or None."""
     t = text.lower()
-    up_tokens = ["rise", "rising", "increase", "increasing", "up", "higher", "grow", "growing"]
-    down_tokens = ["fall", "falling", "decrease", "decreasing", "down", "lower", "decline", "declining"]
+    up_tokens = [
+        "rise",
+        "rising",
+        "increase",
+        "increasing",
+        "up",
+        "higher",
+        "grow",
+        "growing",
+    ]
+    down_tokens = [
+        "fall",
+        "falling",
+        "decrease",
+        "decreasing",
+        "down",
+        "lower",
+        "decline",
+        "declining",
+    ]
     if any(tok in t for tok in up_tokens) and not any(tok in t for tok in down_tokens):
         return "up"
     if any(tok in t for tok in down_tokens) and not any(tok in t for tok in up_tokens):
@@ -1316,11 +1390,29 @@ def _infer_evidence_direction(evidence_list: List[Dict[str, Any]]) -> Optional[s
     for ev in evidence_list:
         snippet = (ev.get("snippet") or "").lower()
         # Up cues
-        for tok in ["rise", "rising", "increase", "increasing", "up", "higher", "grow", "growing"]:
+        for tok in [
+            "rise",
+            "rising",
+            "increase",
+            "increasing",
+            "up",
+            "higher",
+            "grow",
+            "growing",
+        ]:
             if tok in snippet:
                 score += 1
         # Down cues
-        for tok in ["fall", "falling", "decrease", "decreasing", "down", "lower", "decline", "declining"]:
+        for tok in [
+            "fall",
+            "falling",
+            "decrease",
+            "decreasing",
+            "down",
+            "lower",
+            "decline",
+            "declining",
+        ]:
             if tok in snippet:
                 score -= 1
     if score > 1:
@@ -1354,7 +1446,7 @@ def _neutralize_claim_text(text: str) -> str:
 def detect_complementary_claims(claim1_text: str, claim2_text: str) -> bool:
     """
     Detect if two claims are complementary (opposite directional assertions about same topic).
-    
+
     Examples:
     - "Violent crime in Canada is rising" vs "Violent crime in Canada is declining"
     - "Unemployment rates are increasing" vs "Unemployment rates are decreasing"
@@ -1362,41 +1454,40 @@ def detect_complementary_claims(claim1_text: str, claim2_text: str) -> bool:
     # Normalize both texts
     t1 = claim1_text.lower().strip()
     t2 = claim2_text.lower().strip()
-    
+
     # Remove directional words to get base topics
     base1 = _neutralize_claim_text(t1).lower()
     base2 = _neutralize_claim_text(t2).lower()
-    
+
     # Check if base topics are similar (simple word overlap check)
     words1 = set(base1.split())
     words2 = set(base2.split())
     overlap = len(words1.intersection(words2))
-    
+
     # Need significant overlap in base topic
     if overlap < max(2, min(len(words1), len(words2)) * 0.6):
         return False
-    
+
     # Check for opposite directional indicators
     dir1 = _infer_claim_direction(t1)
     dir2 = _infer_claim_direction(t2)
-    
+
     return dir1 is not None and dir2 is not None and dir1 != dir2
 
 
 def reconcile_complementary_verdicts(
-    claim1_text: str, summary1: PanelSummary,
-    claim2_text: str, summary2: PanelSummary
+    claim1_text: str, summary1: PanelSummary, claim2_text: str, summary2: PanelSummary
 ) -> tuple[PanelSummary, PanelSummary]:
     """
     Reconcile two complementary claims to ensure logical consistency.
-    
+
     If both claims have high support (>0.6), adjust them to be complementary:
     - The claim with higher support keeps its verdict
     - The complementary claim gets inverted confidences
     """
     if not detect_complementary_claims(claim1_text, claim2_text):
         return summary1, summary2
-    
+
     # If both have high support, that's inconsistent
     if summary1.support_confidence > 0.6 and summary2.support_confidence > 0.6:
         # Keep the one with higher support, invert the other
@@ -1406,7 +1497,7 @@ def reconcile_complementary_verdicts(
                 support_confidence=summary2.refute_confidence,
                 refute_confidence=summary2.support_confidence,
                 model_count=summary2.model_count,
-                verdict=_invert_verdict(summary2.verdict)
+                verdict=_invert_verdict(summary2.verdict),
             )
             return summary1, new_summary2
         else:
@@ -1415,10 +1506,10 @@ def reconcile_complementary_verdicts(
                 support_confidence=summary1.refute_confidence,
                 refute_confidence=summary1.support_confidence,
                 model_count=summary1.model_count,
-                verdict=_invert_verdict(summary1.verdict)
+                verdict=_invert_verdict(summary1.verdict),
             )
             return new_summary1, summary2
-    
+
     return summary1, summary2
 
 
@@ -1430,5 +1521,3 @@ def _invert_verdict(verdict: Optional[PanelVerdict]) -> Optional[PanelVerdict]:
         return PanelVerdict.TRUE
     else:
         return verdict  # MIXED/UNKNOWN stay the same
-
-

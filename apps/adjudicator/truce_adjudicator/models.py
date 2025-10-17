@@ -335,8 +335,8 @@ class ConsensusStatementRequest(BaseModel):
 
 class CitationLink(BaseModel):
     """Links a text span to evidence source."""
-    
-    start: int = Field(..., description="Start character position in argument text")  
+
+    start: int = Field(..., description="Start character position in argument text")
     end: int = Field(..., description="End character position in argument text")
     evidence_id: UUID = Field(..., description="ID of the evidence source")
     text: str = Field(..., description="The cited text span")
@@ -347,7 +347,10 @@ class ArgumentWithEvidence(BaseModel):
 
     argument: str = Field(..., min_length=20, max_length=2000)
     evidence_ids: List[UUID] = Field(default_factory=list)
-    citation_links: List[CitationLink] = Field(default_factory=list, description="Links between text spans and evidence sources")
+    citation_links: List[CitationLink] = Field(
+        default_factory=list,
+        description="Links between text spans and evidence sources",
+    )
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 
@@ -359,18 +362,28 @@ class PanelModelVerdict(BaseModel):
     approval_argument: ArgumentWithEvidence
     refusal_argument: ArgumentWithEvidence
     raw: Optional[Dict[str, Any]] = None
-    failed: bool = Field(default=False, description="Whether this model evaluation failed")
+    failed: bool = Field(
+        default=False, description="Whether this model evaluation failed"
+    )
     error: Optional[str] = Field(default=None, description="Error message if failed")
-    error_details: Optional[str] = Field(default=None, description="Detailed error information for debugging")
+    error_details: Optional[str] = Field(
+        default=None, description="Detailed error information for debugging"
+    )
 
 
 class PanelSummary(BaseModel):
     """Aggregated summary across provider verdicts."""
 
-    support_confidence: float = Field(..., ge=0.0, le=1.0, description="Aggregate confidence for approval")
-    refute_confidence: float = Field(..., ge=0.0, le=1.0, description="Aggregate confidence for refusal")
+    support_confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Aggregate confidence for approval"
+    )
+    refute_confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="Aggregate confidence for refusal"
+    )
     model_count: int = Field(..., ge=0)
-    verdict: Optional[PanelVerdict] = Field(default=None, description="Derived verdict based on confidence scores")
+    verdict: Optional[PanelVerdict] = Field(
+        default=None, description="Derived verdict based on confidence scores"
+    )
 
 
 class PanelResult(BaseModel):

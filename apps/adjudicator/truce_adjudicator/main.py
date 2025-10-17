@@ -94,25 +94,37 @@ def generate_slug(text: str) -> str:
     return slug[:80]
 
 
-async def emit_progress(session_id: str, stage: str, message: str, details: Optional[Dict] = None):
+async def emit_progress(
+    session_id: str, stage: str, message: str, details: Optional[Dict] = None
+):
     """Emit a progress update to the session's SSE stream"""
     if session_id in progress_streams:
         event_data = {
             "stage": stage,
             "message": message,
             "timestamp": datetime.utcnow().isoformat(),
-            **(details or {})
+            **(details or {}),
         }
         try:
             await progress_streams[session_id].put(event_data)
-            logger.info(f"Progress emitted for session {session_id}: {stage} - {message}")
+            logger.info(
+                f"Progress emitted for session {session_id}: {stage} - {message}"
+            )
         except Exception as e:
             logger.warning(f"Failed to emit progress for session {session_id}: {e}")
     else:
         logger.warning(f"No progress stream found for session {session_id}")
 
 
-async def emit_agent_update(session_id: str, agent_name: str, action: str, reasoning: str = "", search_strategy: str = "", sources_found: List[str] = None, error: str = None):
+async def emit_agent_update(
+    session_id: str,
+    agent_name: str,
+    action: str,
+    reasoning: str = "",
+    search_strategy: str = "",
+    sources_found: List[str] = None,
+    error: str = None,
+):
     """Emit detailed agent activity updates."""
     details = {
         "agent_name": agent_name,
@@ -120,7 +132,7 @@ async def emit_agent_update(session_id: str, agent_name: str, action: str, reaso
         "search_strategy": search_strategy,
         "sources_found": sources_found or [],
     }
-    
+
     if error:
         details["error_message"] = error
         await emit_progress(session_id, "error", action, details)
@@ -134,29 +146,30 @@ async def generate_progress_stream(session_id: str) -> AsyncGenerator[str, None]
         # Use existing queue or create a new one
         if session_id not in progress_streams:
             progress_streams[session_id] = asyncio.Queue()
-        
+
         logger.info(f"Starting SSE stream for session {session_id}")
-        
+
         while True:
             try:
                 # Wait for progress updates with timeout
                 event_data = await asyncio.wait_for(
-                    progress_streams[session_id].get(), 
-                    timeout=30.0
+                    progress_streams[session_id].get(), timeout=30.0
                 )
-                
+
                 # Format as SSE event
                 yield f"data: {json.dumps(event_data)}\n\n"
-                logger.info(f"SSE sent for session {session_id}: {event_data.get('stage')}")
-                
+                logger.info(
+                    f"SSE sent for session {session_id}: {event_data.get('stage')}"
+                )
+
                 # Check if this is the completion event
                 if event_data.get("stage") in ["complete", "error", "cancelled"]:
                     break
-                    
+
             except asyncio.TimeoutError:
                 # Send keepalive
                 yield f"data: {json.dumps({'stage': 'keepalive', 'message': 'Connection active'})}\n\n"
-                
+
     except Exception as e:
         logger.error(f"Error in progress stream for session {session_id}: {e}")
         yield f"data: {json.dumps({'stage': 'error', 'message': 'Stream error occurred'})}\n\n"
@@ -194,28 +207,38 @@ async def _gather_and_persist_sources(
     """Gather explorer sources, deduplicate them, and persist as evidence."""
 
     if session_id:
-        await emit_progress(session_id, "gathering_sources", "Contacting data sources...")
+        await emit_progress(
+            session_id, "gathering_sources", "Contacting data sources..."
+        )
 
     logger.info(f"Starting evidence gathering for claim: {claim.text}")
-    
+
     try:
         # Comprehensive evidence gathering without timeout - let it take the time needed
-        gathered_sources = await explorer_agent.gather_sources(claim.text, window, session_id)
-        logger.info(f"Evidence gathering completed. Found {len(gathered_sources)} sources")
-        
+        gathered_sources = await explorer_agent.gather_sources(
+            claim.text, window, session_id
+        )
+        logger.info(
+            f"Evidence gathering completed. Found {len(gathered_sources)} sources"
+        )
+
         if session_id and gathered_sources:
             await emit_progress(
-                session_id, 
-                "processing_sources", 
+                session_id,
+                "processing_sources",
                 f"Processing {len(gathered_sources)} sources...",
-                {"raw_sources": len(gathered_sources)}
+                {"raw_sources": len(gathered_sources)},
             )
     except Exception as e:
         logger.error(f"Error during evidence gathering: {e}")
         if session_id:
-            await emit_progress(session_id, "api_error", "Some data sources unavailable, continuing with partial results...")
+            await emit_progress(
+                session_id,
+                "api_error",
+                "Some data sources unavailable, continuing with partial results...",
+            )
         gathered_sources = []
-    
+
     if not gathered_sources:
         return []
     # Build deduplication sets from all existing evidence, not just those with snippets
@@ -253,12 +276,14 @@ async def _gather_and_persist_sources(
             existing_hashes.add(evidence.content_hash)
 
         processed_count += 1
-        
+
         # Check for cancellation during processing
         check_cancellation(session_id)
-        
+
         # Emit granular progress every 5 sources or at milestones
-        if session_id and (processed_count % 5 == 0 or processed_count == total_sources):
+        if session_id and (
+            processed_count % 5 == 0 or processed_count == total_sources
+        ):
             progress_pct = int((i + 1) / total_sources * 100)
             await emit_progress(
                 session_id,
@@ -268,8 +293,8 @@ async def _gather_and_persist_sources(
                     "processed": processed_count,
                     "total": total_sources,
                     "unique_evidence": len(new_evidence),
-                    "progress_pct": progress_pct
-                }
+                    "progress_pct": progress_pct,
+                },
             )
 
     if new_evidence:
@@ -290,13 +315,17 @@ async def _gather_and_persist_sources(
     if session_id:
         if new_evidence:
             await emit_progress(
-                session_id, 
-                "evidence_found", 
+                session_id,
+                "evidence_found",
                 f"Found and processed {len(new_evidence)} evidence sources",
-                {"evidence_count": len(new_evidence)}
+                {"evidence_count": len(new_evidence)},
             )
         else:
-            await emit_progress(session_id, "sources_limited", "Limited evidence sources found, continuing with analysis...")
+            await emit_progress(
+                session_id,
+                "sources_limited",
+                "Limited evidence sources found, continuing with analysis...",
+            )
 
     return new_evidence
 
@@ -322,7 +351,7 @@ async def claim_progress_stream(session_id: str):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Access-Control-Allow-Origin": "*",
-        }
+        },
     )
 
 
@@ -420,7 +449,9 @@ async def add_statcan_evidence(
 
 
 @app.get("/search", response_model=SearchResponse)
-async def search_claims(q: str = Query(..., min_length=1), auto_create: bool = Query(False)):
+async def search_claims(
+    q: str = Query(..., min_length=1), auto_create: bool = Query(False)
+):
     """Search claims and evidence via SQLite FTS, with optional auto-creation."""
     from .models import ClaimSearchHit, EvidenceSearchHit
 
@@ -464,10 +495,10 @@ async def search_claims(q: str = Query(..., min_length=1), auto_create: bool = Q
         suggestion_slug = await _create_claim_from_query(q.strip())
 
     return SearchResponse(
-        query=q, 
-        claims=claim_hits, 
+        query=q,
+        claims=claim_hits,
         evidence=evidence_hits,
-        suggestion_slug=suggestion_slug
+        suggestion_slug=suggestion_slug,
     )
 
 
@@ -476,17 +507,19 @@ async def create_claim_async(request: Dict[str, str]):
     """Start async claim creation and return session ID for progress tracking"""
     query = request.get("query", "").strip()
     if len(query) < 10:
-        raise HTTPException(status_code=400, detail="Query must be at least 10 characters")
-    
+        raise HTTPException(
+            status_code=400, detail="Query must be at least 10 characters"
+        )
+
     # Generate session ID
     session_id = str(uuid4())
-    
+
     # Pre-create the progress stream to avoid race condition
     progress_streams[session_id] = asyncio.Queue()
-    
+
     # Start claim creation in background
     asyncio.create_task(_create_claim_from_query_background(query, session_id))
-    
+
     return {"session_id": session_id}
 
 
@@ -502,7 +535,9 @@ async def _create_claim_from_query_background(query: str, session_id: str):
     except Exception as e:
         logger.error(f"Background claim creation failed for session {session_id}: {e}")
         if session_id in progress_streams:
-            await emit_progress(session_id, "error", f"Failed to create claim: {str(e)}")
+            await emit_progress(
+                session_id, "error", f"Failed to create claim: {str(e)}"
+            )
     finally:
         # Clean up cancellation tracking
         if session_id in cancelled_sessions:
@@ -520,10 +555,12 @@ async def _create_claim_from_query(query: str, session_id: Optional[str] = None)
     try:
         # Check cancellation before starting
         check_cancellation(session_id)
-        
+
         # Emit progress: Initializing
         if session_id:
-            await emit_progress(session_id, "initializing", "Setting up claim analysis...")
+            await emit_progress(
+                session_id, "initializing", "Setting up claim analysis..."
+            )
 
         # Create the claim
         claim = Claim(
@@ -543,65 +580,83 @@ async def _create_claim_from_query(query: str, session_id: Optional[str] = None)
 
         # Check cancellation before evidence gathering
         check_cancellation(session_id)
-        
+
         # Emit progress: Searching for evidence
         if session_id:
-            await emit_progress(session_id, "searching", "Searching for evidence sources...")
+            await emit_progress(
+                session_id, "searching", "Searching for evidence sources..."
+            )
 
         # Skip traditional evidence gathering - agentic research will handle it
         window = TimeWindow()  # No time constraints for new claims
-        logger.info(f"Created claim '{slug}' - agentic research will gather evidence during panel evaluation")
+        logger.info(
+            f"Created claim '{slug}' - agentic research will gather evidence during panel evaluation"
+        )
 
         # Check cancellation before AI evaluation
         check_cancellation(session_id)
 
         # Run agentic research panel evaluation (will gather evidence during research)
         if session_id:
-            await emit_progress(session_id, "evaluating", "Starting agentic research and AI evaluation...")
-        
+            await emit_progress(
+                session_id,
+                "evaluating",
+                "Starting agentic research and AI evaluation...",
+            )
+
         try:
             # Add timeout for panel evaluation (180 seconds for agentic research)
             server_url = os.getenv("MCP_BRAVE_SERVER_URL", "http://mcp-server:8888/mcp")
             panel_result = await asyncio.wait_for(
                 run_panel_evaluation(
-                    claim, 
-                    DEFAULT_PANEL_MODELS, 
+                    claim,
+                    DEFAULT_PANEL_MODELS,
                     window,
                     session_id=session_id,
                     enable_agentic_research=True,
-                    mcp_server_url=server_url
+                    mcp_server_url=server_url,
                 ),
-                timeout=180.0  # Longer timeout for agentic research
+                timeout=180.0,  # Longer timeout for agentic research
             )
             claim.panel_results.append(panel_result)
             claim.model_assessments = panel_result_to_assessments(panel_result)
             claim.updated_at = datetime.utcnow()
             logger.info(f"Completed panel evaluation for new claim '{slug}'")
-            
+
             if session_id:
                 model_count = len(panel_result.models) if panel_result else 0
                 await emit_progress(
-                    session_id, 
-                    "evaluation_complete", 
+                    session_id,
+                    "evaluation_complete",
                     f"Analysis complete: {model_count} AI models evaluated the claim",
-                    {"model_count": model_count, "slug": slug}
+                    {"model_count": model_count, "slug": slug},
                 )
         except asyncio.TimeoutError:
             logger.warning(f"Panel evaluation timed out for new claim '{slug}'")
             if session_id:
-                await emit_progress(session_id, "evaluation_timeout", "AI evaluation taking longer than expected, claim saved with evidence only")
+                await emit_progress(
+                    session_id,
+                    "evaluation_timeout",
+                    "AI evaluation taking longer than expected, claim saved with evidence only",
+                )
         except Exception as e:
-            logger.warning(f"Failed to run panel evaluation for new claim '{slug}': {e}")
+            logger.warning(
+                f"Failed to run panel evaluation for new claim '{slug}': {e}"
+            )
             if session_id:
-                await emit_progress(session_id, "evaluation_error", "AI evaluation failed, but claim created successfully with evidence")
+                await emit_progress(
+                    session_id,
+                    "evaluation_error",
+                    "AI evaluation failed, but claim created successfully with evidence",
+                )
 
         # Emit completion
         if session_id:
             await emit_progress(
-                session_id, 
-                "complete", 
+                session_id,
+                "complete",
                 "Claim analysis complete! Redirecting...",
-                {"slug": slug}
+                {"slug": slug},
             )
 
         return slug
@@ -609,7 +664,9 @@ async def _create_claim_from_query(query: str, session_id: Optional[str] = None)
     except Exception as e:
         logger.error(f"Failed to create claim from query '{query}': {e}")
         if session_id:
-            await emit_progress(session_id, "error", f"Failed to create claim: {str(e)}")
+            await emit_progress(
+                session_id, "error", f"Failed to create claim: {str(e)}"
+            )
         raise
 
 
@@ -713,25 +770,29 @@ async def verify_claim(
 
 @app.post("/claims/{claim_id}/panel/run")
 async def run_model_panel(
-    claim_id: str, 
+    claim_id: str,
     request: PanelRequest,
     agentic: bool = Query(True, description="Enable agentic research mode"),
-    mcp_server_url: Optional[str] = Query(None, description="FastMCP Brave Search server URL")
+    mcp_server_url: Optional[str] = Query(
+        None, description="FastMCP Brave Search server URL"
+    ),
 ):
     """Run multi-model evaluation panel with optional agentic research"""
     claim = get_claim_by_id(claim_id)
-    
+
     try:
         # Determine MCP server URL
-        server_url = mcp_server_url or os.getenv("MCP_BRAVE_SERVER_URL", "http://localhost:8000/mcp")
-        
+        server_url = mcp_server_url or os.getenv(
+            "MCP_BRAVE_SERVER_URL", "http://localhost:8000/mcp"
+        )
+
         panel_result = await run_panel_evaluation(
             claim,
             request.models or DEFAULT_PANEL_MODELS,
             request.to_time_window(),
             session_id=None,  # Could add session support for progress tracking
             enable_agentic_research=agentic,
-            mcp_server_url=server_url
+            mcp_server_url=server_url,
         )
 
         claim.panel_results.append(panel_result)
@@ -740,10 +801,10 @@ async def run_model_panel(
 
         claim.model_assessments = panel_result_to_assessments(panel_result)
         claim.updated_at = datetime.utcnow()
-        
+
         # Apply complementary claim reconciliation if needed
         panel_result = await _apply_complementary_reconciliation(claim, panel_result)
-        
+
         # If agentic research was used, update the claim's evidence
         if agentic and panel_result.models:
             # Extract evidence from the enriched claim used in panel evaluation
@@ -768,16 +829,16 @@ async def run_agentic_panel_with_progress(claim_id: str, request: PanelRequest):
     """Run agentic panel evaluation with real-time progress updates via SSE"""
     claim = get_claim_by_id(claim_id)
     session_id = str(uuid4())
-    
+
     # Create progress queue for this session
     progress_streams[session_id] = asyncio.Queue()
-    
+
     async def generate_progress():
         """Generate SSE stream with progress updates"""
         try:
             # Start the agentic research process
             server_url = os.getenv("MCP_BRAVE_SERVER_URL", "http://localhost:8000/mcp")
-            
+
             # Run agentic panel evaluation with progress tracking
             panel_task = asyncio.create_task(
                 run_panel_evaluation(
@@ -786,10 +847,10 @@ async def run_agentic_panel_with_progress(claim_id: str, request: PanelRequest):
                     request.to_time_window(),
                     session_id=session_id,
                     enable_agentic_research=True,
-                    mcp_server_url=server_url
+                    mcp_server_url=server_url,
                 )
             )
-            
+
             # Stream progress updates
             while not panel_task.done():
                 try:
@@ -797,60 +858,66 @@ async def run_agentic_panel_with_progress(claim_id: str, request: PanelRequest):
                     progress_data = await asyncio.wait_for(
                         progress_streams[session_id].get(), timeout=1.0
                     )
-                    
+
                     # Send progress update
                     yield f"data: {json.dumps(progress_data)}\n\n"
-                    
+
                 except asyncio.TimeoutError:
                     # Send heartbeat to keep connection alive
                     yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
-                
+
                 except Exception as e:
                     logger.error(f"Progress stream error: {e}")
                     break
-            
+
             # Get final result
             try:
                 panel_result = await panel_task
-                
+
                 # Update claim with results
                 claim.panel_results.append(panel_result)
                 if len(claim.panel_results) > 5:
                     claim.panel_results = claim.panel_results[-5:]
-                
+
                 claim.model_assessments = panel_result_to_assessments(panel_result)
                 claim.updated_at = datetime.utcnow()
-                
+
                 # Apply complementary claim reconciliation if needed
-                panel_result = await _apply_complementary_reconciliation(claim, panel_result)
-                
+                panel_result = await _apply_complementary_reconciliation(
+                    claim, panel_result
+                )
+
                 # Send completion event
                 completion_data = {
                     "type": "completion",
                     "status": "success",
                     "panel": {
-                        "verdict": panel_result.summary.verdict.value if panel_result.summary.verdict else "unknown",
+                        "verdict": (
+                            panel_result.summary.verdict.value
+                            if panel_result.summary.verdict
+                            else "unknown"
+                        ),
                         "support_confidence": panel_result.summary.support_confidence,
                         "refute_confidence": panel_result.summary.refute_confidence,
                         "model_count": panel_result.summary.model_count,
                         "evidence_count": len(claim.evidence) if claim.evidence else 0,
-                    }
+                    },
                 }
                 yield f"data: {json.dumps(completion_data)}\n\n"
-                
+
             except Exception as e:
                 logger.error(f"Agentic panel evaluation failed: {e}")
                 error_data = {
                     "type": "error",
-                    "message": f"Panel evaluation failed: {str(e)}"
+                    "message": f"Panel evaluation failed: {str(e)}",
                 }
                 yield f"data: {json.dumps(error_data)}\n\n"
-        
+
         finally:
             # Cleanup
             if session_id in progress_streams:
                 del progress_streams[session_id]
-    
+
     return StreamingResponse(
         generate_progress(),
         media_type="text/event-stream",
@@ -1004,58 +1071,71 @@ async def get_replay_bundle(claim_id: str):
         )
 
 
-async def _apply_complementary_reconciliation(claim: Claim, panel_result: PanelResult) -> PanelResult:
+async def _apply_complementary_reconciliation(
+    claim: Claim, panel_result: PanelResult
+) -> PanelResult:
     """
     Apply complementary claim reconciliation within the same topic.
-    
+
     Checks for other claims in the same topic that might be complementary
     and reconciles their verdicts to ensure logical consistency.
     """
-    
+
     # Find other claims in the same topic
-    topic_claims = [c for c in claims_db.values() if c.topic == claim.topic and c.id != claim.id]
-    
+    topic_claims = [
+        c for c in claims_db.values() if c.topic == claim.topic and c.id != claim.id
+    ]
+
     # Check each claim for complementarity
     for other_claim in topic_claims:
         if not other_claim.panel_results:
             continue
-            
+
         other_panel = other_claim.panel_results[-1]  # Most recent panel result
-        
+
         # Apply reconciliation
         reconciled_current, reconciled_other = reconcile_complementary_verdicts(
-            claim.text, panel_result.summary,
-            other_claim.text, other_panel.summary
+            claim.text, panel_result.summary, other_claim.text, other_panel.summary
         )
-        
+
         # If reconciliation changed the current claim's summary, update it
-        if (reconciled_current.support_confidence != panel_result.summary.support_confidence or
-            reconciled_current.refute_confidence != panel_result.summary.refute_confidence):
-            
+        if (
+            reconciled_current.support_confidence
+            != panel_result.summary.support_confidence
+            or reconciled_current.refute_confidence
+            != panel_result.summary.refute_confidence
+        ):
+
             # Create new panel result with reconciled summary
             panel_result = PanelResult(
                 prompt=panel_result.prompt,
                 models=panel_result.models,
-                summary=reconciled_current
+                summary=reconciled_current,
             )
-            
+
             # Also update the other claim if it was reconciled
-            if (reconciled_other.support_confidence != other_panel.summary.support_confidence or
-                reconciled_other.refute_confidence != other_panel.summary.refute_confidence):
-                
+            if (
+                reconciled_other.support_confidence
+                != other_panel.summary.support_confidence
+                or reconciled_other.refute_confidence
+                != other_panel.summary.refute_confidence
+            ):
+
                 other_reconciled_panel = PanelResult(
                     prompt=other_panel.prompt,
                     models=other_panel.models,
-                    summary=reconciled_other
+                    summary=reconciled_other,
                 )
-                
+
                 # Update the other claim's most recent panel result
                 other_claim.panel_results[-1] = other_reconciled_panel
-                other_claim.model_assessments = panel_result_to_assessments(other_reconciled_panel)
+                other_claim.model_assessments = panel_result_to_assessments(
+                    other_reconciled_panel
+                )
                 other_claim.updated_at = datetime.utcnow()
-            
+
             break  # Only reconcile with the first complementary claim found
-    
+
     return panel_result
 
 

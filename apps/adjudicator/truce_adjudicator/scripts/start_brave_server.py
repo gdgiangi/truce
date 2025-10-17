@@ -15,7 +15,7 @@ from mcp.brave_search_server import mcp
 async def main():
     """Start the FastMCP Brave Search server."""
     print("Starting FastMCP Brave Search server...")
-    
+
     # Check for Brave API key
     api_key = os.getenv("BRAVE_SEARCH_API_KEY")
     if not api_key:
@@ -23,9 +23,9 @@ async def main():
         print("Please set your Brave Search API key:")
         print("export BRAVE_SEARCH_API_KEY=your_api_key_here")
         return
-    
+
     print(f"Brave API key configured: {api_key[:8]}...")
-    
+
     # Start the server
     try:
         print("FastMCP Brave Search server starting on port 8000...")

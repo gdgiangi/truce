@@ -4,7 +4,14 @@ from datetime import datetime
 
 import pytest
 
-from truce_adjudicator.models import ArgumentWithEvidence, Claim, Evidence, PanelModelVerdict, PanelVerdict, TimeWindow
+from truce_adjudicator.models import (
+    ArgumentWithEvidence,
+    Claim,
+    Evidence,
+    PanelModelVerdict,
+    PanelVerdict,
+    TimeWindow,
+)
 from truce_adjudicator.panel.run_panel import (
     _ensure_payload_dict,
     aggregate_panel,
@@ -42,7 +49,9 @@ def claim_with_evidence() -> Claim:
     return claim
 
 
-def test_build_normalized_prompt_contains_expected_fields(claim_with_evidence: Claim) -> None:
+def test_build_normalized_prompt_contains_expected_fields(
+    claim_with_evidence: Claim,
+) -> None:
     window = TimeWindow(start=datetime(2023, 1, 1), end=datetime(2024, 12, 31))
     prompt = build_normalized_prompt(claim_with_evidence, window)
 
@@ -116,9 +125,11 @@ def test_aggregate_panel_balanced_returns_mixed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_panel_result_to_assessments_maps_verdicts(claim_with_evidence: Claim) -> None:
+async def test_panel_result_to_assessments_maps_verdicts(
+    claim_with_evidence: Claim,
+) -> None:
     panel = await run_panel_evaluation(
-        claim_with_evidence, 
+        claim_with_evidence,
         ["gpt-4o", "claude-sonnet-4-20250514"],
         enable_agentic_research=False,
     )

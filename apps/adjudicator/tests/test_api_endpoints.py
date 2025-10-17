@@ -344,6 +344,7 @@ class TestPanelEndpoint:
         assert len(claim_record.panel_results) == 1
         assert len(claim_record.model_assessments) == 2
 
+
 class TestConsensusEndpoints:
     """Test consensus-related endpoints"""
 
