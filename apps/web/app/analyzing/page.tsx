@@ -27,7 +27,7 @@ interface ProgressEvent {
   sources_found?: string[];
 }
 
-const adjudicatorUrl = "http://localhost:8000";
+const adjudicatorUrl = process.env.NEXT_PUBLIC_ADJUDICATOR_API_URL || "http://localhost:8000";
 
 function getAgentIcon(agentName?: string, searchStrategy?: string) {
   if (searchStrategy === 'academic') return <BookOpen className="w-4 h-4 text-blue-500" />;
