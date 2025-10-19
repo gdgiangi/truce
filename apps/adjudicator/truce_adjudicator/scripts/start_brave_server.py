@@ -24,7 +24,7 @@ async def main():
         print("export BRAVE_SEARCH_API_KEY=your_api_key_here")
         return
 
-    print(f"Brave API key configured: {api_key[:8]}...")
+    print("Brave API key configured.")
 
     # Start the server
     try:
