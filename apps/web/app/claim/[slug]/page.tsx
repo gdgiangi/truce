@@ -112,7 +112,7 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
 
   const { claim, provenance_verified, replay_bundle_url, panel } = claimData;
   const panelModels = panel?.models ?? [];
-  const evidenceMap = new Map(claim.evidence.map((item) => [item.id, item]));
+  const evidenceRecord = Object.fromEntries(claim.evidence.map((item) => [item.id, item]));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
