@@ -8,7 +8,7 @@
 # Clone and start
 git clone https://github.com/your-org/truce
 cd truce
-cp env.example apps/adjudicator/.env  # Edit with your API keys
+cp env.example .env  # Edit with your API keys
 
 # Set your Brave API key for agentic research (free tier available)
 export BRAVE_SEARCH_API_KEY=your_brave_api_key_here
