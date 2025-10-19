@@ -236,7 +236,6 @@ npm test
 - [API Reference](docs/API.md) - Complete API documentation
 - [Architecture Decisions](docs/) - ADRs and design docs
 - [Data Sources](docs/DATA-SOURCES.md) - Evidence source documentation
-- [How to Verify](HOW_TO_VERIFY.md) - Testing and verification guide
 - [NVC Guide](docs/NVC-GUIDE.md) - Nonviolent communication framework
 
 ## Technical Foundation
