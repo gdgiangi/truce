@@ -263,9 +263,11 @@ export function ClaimVerdictDisplay({
 }: { 
   panelModels: PanelModelVerdict[];
   summary: PanelSummary;
-  evidenceMap: Map<string, Evidence>;
+  evidenceMap: Record<string, Evidence>;
 }) {
   const [selectedSide, setSelectedSide] = useState<ArgumentSide>(null);
+  // If you need a Map for efficient lookup, reconstruct it locally:
+  const evidenceMapObj = new Map(Object.entries(evidenceMap));
 
   const supportPercentage = Math.round(summary.support_confidence * 100);
   const refutePercentage = Math.round(summary.refute_confidence * 100);
