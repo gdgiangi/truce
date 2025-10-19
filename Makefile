@@ -8,14 +8,16 @@ help: ## Show this help message
 build: ## Build all Docker images
 	docker-compose build
 
-up: ## Start all services
+up: ## Start all services (including MCP server)
 	docker-compose up -d
 	@echo "🚀 Services starting..."
 	@echo "   Web UI: http://localhost:3000"
 	@echo "   API: http://localhost:8000"
+	@echo "   MCP Server: http://localhost:8888"
 	@echo "   Fuseki (optional): http://localhost:3030"
 	@echo ""
 	@echo "Run 'make seed' to load demo data"
+	@echo "Note: Agentic research requires BRAVE_SEARCH_API_KEY environment variable"
 
 down: ## Stop all services
 	docker-compose down
@@ -43,7 +45,7 @@ publish: ## Create static site with replay bundles
 	@echo "📦 Creating publication bundle..."
 	@echo "Replay bundles available via API - see /replay/{claim_id}.jsonl endpoint"
 
-dev: ## Start development environment
+dev: ## Start development environment (with MCP server)
 	docker-compose up --build
 
 logs: ## Show logs from all services
@@ -54,6 +56,9 @@ logs-web: ## Show web service logs
 
 logs-api: ## Show adjudicator API logs  
 	docker-compose logs -f adjudicator
+
+logs-mcp: ## Show MCP server logs
+	docker-compose logs -f mcp-server
 
 test: ## Run tests
 	docker-compose exec adjudicator python -m pytest tests/
@@ -77,8 +82,10 @@ demo: build up seed ## Full demo setup (build + up + seed)
 	@echo "   Claim Card: http://localhost:3000/claim/violent-crime-in-canada-is-rising"  
 	@echo "   Consensus Board: http://localhost:3000/consensus/canada-crime"
 	@echo "   API: http://localhost:8000"
+	@echo "   MCP Server: http://localhost:8888"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  - View the claim evaluation and evidence"
 	@echo "  - Vote on consensus statements"
+	@echo "  - Try agentic research (requires BRAVE_SEARCH_API_KEY)"
 	@echo "  - Download replay bundle for reproducibility"

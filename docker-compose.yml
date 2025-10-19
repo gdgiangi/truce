@@ -1,4 +1,17 @@
 services:
+  mcp-server:
+    build:
+      context: ./apps/adjudicator
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8888"
+    environment:
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
+    volumes:
+      - ./apps/adjudicator:/app
+    working_dir: /app
+    command: fastmcp run truce_adjudicator/mcp/brave_search_server.py:mcp --transport http --host 0.0.0.0 --port 8888
+
   adjudicator:
     build:
       context: ./apps/adjudicator
@@ -7,15 +20,21 @@ services:
       - "8000:8000"
     environment:
       - STATCAN_WDS_BASE=https://www150.statcan.gc.ca/t1/wds/rest
+      - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - VC_ISSUER_DID=${VC_ISSUER_DID:-did:key:example}
       - VC_PRIVATE_KEY_BASE58=${VC_PRIVATE_KEY_BASE58:-}
+      - MCP_BRAVE_SERVER_URL=http://mcp-server:8888/mcp
     volumes:
       - ./data:/app/data
       - ./apps/adjudicator:/app
     working_dir: /app
     command: uvicorn truce_adjudicator.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - mcp-server
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
@@ -29,7 +48,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - ADJUDICATOR_API_URL=http://adjudicator:8000
+      - NEXT_PUBLIC_ADJUDICATOR_API_URL=${NEXT_PUBLIC_ADJUDICATOR_API_URL}
+      - ADJUDICATOR_API_URL=${ADJUDICATOR_API_URL}
       - NODE_ENV=development
     volumes:
       - ./apps/web:/app

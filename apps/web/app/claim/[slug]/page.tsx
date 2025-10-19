@@ -4,10 +4,10 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { ExternalLink, Download, Shield, AlertTriangle, BarChart3, Bot } from "lucide-react";
-import { ProviderLogo } from "@/components/provider-logo";
-import { ClaimVerifier } from "@/components/claim-verifier";
+import { Download, Shield, AlertTriangle } from "lucide-react";
+import { ClaimVerdictDisplay } from "@/components/claim-verdict-display";
+
+type PanelVerdictValue = "true" | "false" | "mixed" | "unknown";
 
 interface Evidence {
   id: string;
@@ -16,6 +16,42 @@ interface Evidence {
   published_at?: string;
   snippet: string;
   provenance: string;
+  domain?: string;
+}
+
+interface PanelModelVerdict {
+  provider_id: string;
+  model: string;
+  approval_argument: ArgumentWithEvidence;
+  refusal_argument: ArgumentWithEvidence;
+}
+
+interface CitationLink {
+  start: number;
+  end: number;
+  evidence_id: string;
+  text: string;
+}
+
+interface ArgumentWithEvidence {
+  argument: string;
+  evidence_ids: string[];
+  citation_links?: CitationLink[];
+  confidence: number;
+}
+
+interface PanelSummary {
+  support_confidence: number;
+  refute_confidence: number;
+  model_count: number;
+  verdict?: PanelVerdictValue;
+}
+
+interface PanelResult {
+  prompt: Record<string, unknown>;
+  models: PanelModelVerdict[];
+  summary: PanelSummary;
+  generated_at: string;
 }
 
 interface ModelAssessment {
@@ -45,138 +81,26 @@ interface ClaimResponse {
   consensus_score?: number;
   provenance_verified: boolean;
   replay_bundle_url?: string;
+  panel?: PanelResult;
 }
 
 const adjudicatorUrl = process.env.ADJUDICATOR_API_URL || "http://localhost:8000";
-const DEFAULT_PROVIDERS = ["gpt-5", "claude-sonnet-4-20250514"];
 
 async function getClaim(slug: string): Promise<ClaimResponse | null> {
   try {
     const response = await fetch(`${adjudicatorUrl}/claims/${slug}`, {
       cache: 'no-store'
     });
-    
+
     if (!response.ok) {
       return null;
     }
-    
+
     return response.json();
   } catch (error) {
     console.error('Error fetching claim:', error);
     return null;
   }
-}
-
-function getVerdictColor(verdict: string): string {
-  switch (verdict.toLowerCase()) {
-    case "supports": return "supports";
-    case "refutes": return "refutes";
-    case "mixed": return "mixed";
-    case "uncertain": return "uncertain";
-    default: return "secondary";
-  }
-}
-
-function getProviderInfo(modelName: string): { name: string; logo: string } {
-  const name = modelName.toLowerCase();
-  
-  // OpenAI models
-  if (name.includes('gpt') || name.includes('openai') || name.startsWith('o1')) {
-    return {
-      name: 'OpenAI',
-      logo: 'https://www.svgrepo.com/show/306500/openai.svg'
-    };
-  }
-  
-  // Anthropic models
-  if (name.includes('claude') || name.includes('anthropic')) {
-    return {
-      name: 'Anthropic',
-      logo: 'https://registry.npmmirror.com/@lobehub/icons-static-png/1.64.0/files/light/anthropic.png'
-    };
-  }
-  
-  // Demo/Mock models
-  if (name.includes('demo')) {
-    if (name.includes('gpt') || name.includes('openai')) {
-      return {
-        name: 'OpenAI (Demo)',
-        logo: 'https://www.svgrepo.com/show/306500/openai.svg'
-      };
-    }
-    if (name.includes('claude') || name.includes('anthropic')) {
-      return {
-        name: 'Anthropic (Demo)',
-        logo: 'https://registry.npmmirror.com/@lobehub/icons-static-png/1.64.0/files/light/anthropic.png'
-      };
-    }
-  }
-  
-  // Default fallback for unknown models
-  return {
-    name: 'AI Model',
-    logo: ''
-  };
-}
-
-function VerdictDonut({ assessments }: { assessments: ModelAssessment[] }) {
-  const counts = assessments.reduce((acc, assessment) => {
-    acc[assessment.verdict] = (acc[assessment.verdict] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const total = assessments.length;
-  const verdicts = [
-    { name: 'Supports', value: counts.supports || 0, color: 'bg-green-500' },
-    { name: 'Refutes', value: counts.refutes || 0, color: 'bg-red-500' },
-    { name: 'Mixed', value: counts.mixed || 0, color: 'bg-yellow-500' },
-    { name: 'Uncertain', value: counts.uncertain || 0, color: 'bg-gray-500' }
-  ];
-
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-32 h-32 mb-4">
-        <svg className="w-32 h-32 transform -rotate-90" viewBox="0 0 32 32">
-          {verdicts.reduce((acc, verdict, index) => {
-            const percentage = verdict.value / total;
-            const circumference = 2 * Math.PI * 15.91549430918954; // 2πr where r = 15.91549430918954
-            const strokeDasharray = circumference * percentage;
-            const strokeDashoffset = circumference - acc.offset;
-            
-            acc.elements.push(
-              <circle
-                key={verdict.name}
-                cx="16"
-                cy="16"
-                r="15.91549430918954"
-                fill="transparent"
-                stroke={verdict.color.replace('bg-', '')}
-                strokeWidth="4"
-                strokeDasharray={`${strokeDasharray} ${circumference}`}
-                strokeDashoffset={-strokeDashoffset}
-                className={verdict.color}
-              />
-            );
-            
-            acc.offset += strokeDasharray;
-            return acc;
-          }, { elements: [] as React.ReactElement[], offset: 0 }).elements}
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-lg font-semibold">{total}</span>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        {verdicts.map(verdict => (
-          <div key={verdict.name} className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${verdict.color}`} />
-            <span>{verdict.name}: {verdict.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export default async function ClaimPage({ params }: { params: { slug: string } }) {
@@ -186,219 +110,97 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
     notFound();
   }
 
-  const { claim, consensus_score, provenance_verified, replay_bundle_url } = claimData;
+  const { claim, provenance_verified, replay_bundle_url, panel } = claimData;
+  const panelModels = panel?.models ?? [];
+  const evidenceRecord = Object.fromEntries(claim.evidence.map((item) => [item.id, item]));
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+      <div className="container mx-auto px-4 py-12 max-w-7xl">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Badge variant="outline">{claim.topic}</Badge>
+        <div className="mb-12 text-center max-w-4xl mx-auto">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <Badge variant="outline" className="border-gray-300 text-gray-700 px-4 py-1">
+              {claim.topic}
+            </Badge>
             {provenance_verified && (
-              <Badge variant="success" className="flex items-center gap-1">
-                <Shield className="w-3 h-3" />
-                Verified Sources
+              <Badge className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 px-4 py-1">
+                <Shield className="w-3.5 h-3.5" />
+                Verified
               </Badge>
             )}
           </div>
-          
-          <h1 className="text-3xl font-bold mb-4">{claim.text}</h1>
-          
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>Created: {new Date(claim.created_at).toLocaleDateString()}</span>
-            <span>Evidence: {claim.evidence.length} sources</span>
-            <span>Models: {claim.model_assessments.length} evaluations</span>
+
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 leading-tight">
+            {claim.text}
+          </h1>
+
+          <div className="flex items-center justify-center gap-6 text-sm text-gray-500">
+            <span>{new Date(claim.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+            <span>•</span>
+            <span>{claim.evidence.length} sources</span>
+            <span>•</span>
+            <span>{panel?.summary.model_count || 0} AI models</span>
           </div>
         </div>
 
-        <div className="mb-8">
-          <ClaimVerifier
-            slug={params.slug}
-            adjudicatorUrl={adjudicatorUrl}
-            defaultProviders={DEFAULT_PROVIDERS}
+        {panel ? (
+          <ClaimVerdictDisplay
+            panelModels={panelModels}
+            summary={panel.summary}
+            evidenceMap={evidenceRecord}
           />
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Evidence Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <BarChart3 className="w-5 h-5 text-truce-600" />
-                  Evidence & Sources
-                </CardTitle>
-                <CardDescription>
-                  Statistical data and official sources related to this claim
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {claim.evidence.map((evidence, index) => (
-                  <div key={evidence.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h4 className="font-medium text-sm">{evidence.publisher}</h4>
-                        {evidence.published_at && (
-                          <p className="text-xs text-muted-foreground">
-                            Published: {new Date(evidence.published_at).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a href={evidence.url} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="w-4 h-4" />
-                        </a>
-                      </Button>
-                    </div>
-                    
-                    <p className="text-sm mb-2">{evidence.snippet}</p>
-                    
-                    <p className="text-xs text-muted-foreground">
-                      Source: {evidence.provenance}
-                    </p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            {/* Model Assessments */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <Bot className="w-5 h-5 text-truce-600" />
-                  Model Panel Evaluation
-                </CardTitle>
-                <CardDescription>
-                  Independent AI model assessments of this claim
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {claim.model_assessments.map((assessment) => {
-                  const providerInfo = getProviderInfo(assessment.model_name);
-                  
-                  return (
-                    <div key={assessment.id} className="border rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-start gap-3">
-                          {providerInfo.logo && (
-                            <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-gray-50 rounded-lg border">
-                              <ProviderLogo 
-                                src={providerInfo.logo} 
-                                alt={`${providerInfo.name} logo`}
-                                className="w-5 h-5 object-contain"
-                              />
-                            </div>
-                          )}
-                          <div>
-                            <h4 className="font-medium">{assessment.model_name}</h4>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge variant={getVerdictColor(assessment.verdict) as "supports" | "refutes" | "mixed" | "uncertain" | "default" | "secondary" | "destructive" | "outline" | "success" | "warning"}>
-                                {assessment.verdict}
-                              </Badge>
-                              <span className="text-sm text-muted-foreground">
-                                {Math.round(assessment.confidence * 100)}% confidence
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        <Progress 
-                          value={assessment.confidence * 100} 
-                          className="w-20"
-                        />
-                      </div>
-                      
-                      <p className="text-sm mb-3">{assessment.rationale}</p>
-                      
-                      {assessment.citations.length > 0 && (
-                        <div className="text-xs text-muted-foreground">
-                          Cites {assessment.citations.length} evidence source(s)
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
+        ) : (
+          <div className="text-center py-12">
+            <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600">
+              Panel evaluation not available for this claim.
+            </p>
           </div>
+        )}
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Verdict Summary */}
-            {claim.model_assessments.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Model Consensus</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <VerdictDonut assessments={claim.model_assessments} />
-                  
-                  {consensus_score !== undefined && (
-                    <div className="mt-4 pt-4 border-t">
-                      <div className="text-sm text-muted-foreground mb-1">
-                        Support Score
-                      </div>
-                      <Progress value={consensus_score * 100} className="mb-2" />
-                      <div className="text-xs text-muted-foreground">
-                        {Math.round(consensus_score * 100)}% of models support this claim
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+        {/* Actions & Info */}
+        <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6 mt-12">
+          <Card className="border-gray-200">
+            <CardHeader>
+              <CardTitle className="text-base">Methodology</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button variant="outline" className="w-full" asChild>
+                <Link href="/transparency">View Details</Link>
+              </Button>
+            </CardContent>
+          </Card>
 
-            {/* Actions */}
-            <Card>
+          {replay_bundle_url && (
+            <Card className="border-gray-200">
               <CardHeader>
-                <CardTitle className="text-lg">Actions</CardTitle>
+                <CardTitle className="text-base">Replay Bundle</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <Button asChild className="w-full" variant="outline">
-                  <Link href="/consensus/canada-crime">
-                    Join Discussion
-                  </Link>
-                </Button>
-                
-                {replay_bundle_url && (
-                  <Button variant="outline" className="w-full" asChild>
-                    <a href={`http://localhost:8000${replay_bundle_url}`} target="_blank">
-                      <Download className="w-4 h-4 mr-2" />
-                      Download Replay Bundle
-                    </a>
-                  </Button>
-                )}
-                
-                <Button variant="ghost" className="w-full" asChild>
-                  <Link href="/transparency">
-                    View Methodology
-                  </Link>
+              <CardContent>
+                <Button variant="outline" className="w-full" asChild>
+                  <a href={`${adjudicatorUrl}${replay_bundle_url}`} target="_blank">
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </a>
                 </Button>
               </CardContent>
             </Card>
+          )}
 
-            {/* Transparency Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  Limitations
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-2">
-                <p>
-                  Crime statistics reflect police-reported incidents only and may not capture unreported crimes.
-                </p>
-                <p>
-                  Model evaluations are based on available evidence and may not reflect all relevant factors.
-                </p>
-                <p>
-                  This analysis is for demonstration purposes and should not be used for policy decisions.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          <Card className="border-gray-200">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Limitations
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-gray-600">
+              <p>
+                AI evaluations are based on available evidence and should not be used as the sole basis for decisions.
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

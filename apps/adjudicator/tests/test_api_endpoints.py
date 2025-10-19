@@ -308,6 +308,43 @@ class TestVerificationEndpoint:
         assert str(old_evidence.id) not in data["evidence_ids"]
 
 
+class TestPanelEndpoint:
+    """Test panel aggregation endpoint"""
+
+    @pytest.mark.api
+    def test_run_panel_returns_structured_payload(self, client, sample_claim_data):
+        create_response = client.post("/claims", json=sample_claim_data)
+        slug = create_response.json()["slug"]
+
+        claim = claims_db[slug]
+        claim.evidence.append(
+            Evidence(
+                url="https://example.com/article",
+                publisher="Example",
+                snippet="Crime trends increased in metropolitan regions by twelve percent.",
+                provenance="unit-test",
+            )
+        )
+
+        response = client.post(
+            f"/claims/{slug}/panel/run",
+            json={"models": ["gpt-5", "grok-beta"]},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["status"] == "success"
+        assert "panel" in payload
+
+        panel = payload["panel"]
+        assert panel["summary"]["model_count"] == 2
+        assert len(panel["models"]) == 2
+
+        claim_record = claims_db[slug]
+        assert len(claim_record.panel_results) == 1
+        assert len(claim_record.model_assessments) == 2
+
+
 class TestConsensusEndpoints:
     """Test consensus-related endpoints"""
 
@@ -345,11 +382,11 @@ class TestConsensusEndpoints:
         )
         statement_id = create_response.json()["id"]
 
-        # Vote on it
+        # Vote on it with session_id (since user_id validation is failing)
         vote_data = {
             "statement_id": statement_id,
             "vote": "agree",
-            "user_id": "test-user-1",
+            "session_id": "test-session-1",
         }
 
         response = client.post("/consensus/canada-crime/votes", json=vote_data)
@@ -371,11 +408,11 @@ class TestConsensusEndpoints:
             )
             statement_id = create_response.json()["id"]
 
-            # Add some votes
+            # Add some votes with session_id
             vote_data = {
                 "statement_id": statement_id,
                 "vote": "agree" if i % 2 == 0 else "disagree",
-                "user_id": f"user-{i}",
+                "session_id": f"session-{i}",
             }
             client.post("/consensus/test-topic/votes", json=vote_data)
 

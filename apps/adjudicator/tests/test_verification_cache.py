@@ -86,7 +86,14 @@ def seeded_claim() -> Tuple[str, Evidence, Evidence]:
     return slug, recent_evidence, older_evidence
 
 
-def test_cache_hit_after_initial_verification(seeded_claim):
+def test_cache_hit_after_initial_verification(seeded_claim, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from truce_adjudicator.main import explorer_agent
+
+    # Mock the explorer agent to prevent real API calls
+    monkeypatch.setattr(explorer_agent, "gather_sources", AsyncMock(return_value=[]))
+
     slug, _, _ = seeded_claim
 
     first = client.post(f"/claims/{slug}/verify")
@@ -101,7 +108,14 @@ def test_cache_hit_after_initial_verification(seeded_claim):
     assert second_payload["verification_id"] == first_payload["verification_id"]
 
 
-def test_force_refresh_produces_new_verification(seeded_claim):
+def test_force_refresh_produces_new_verification(seeded_claim, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from truce_adjudicator.main import explorer_agent
+
+    # Mock the explorer agent to prevent real API calls
+    monkeypatch.setattr(explorer_agent, "gather_sources", AsyncMock(return_value=[]))
+
     slug, _, _ = seeded_claim
 
     baseline = client.post(f"/claims/{slug}/verify")
@@ -114,7 +128,14 @@ def test_force_refresh_produces_new_verification(seeded_claim):
     assert refreshed_payload["verification_id"] != baseline_payload["verification_id"]
 
 
-def test_time_window_filters_evidence(seeded_claim):
+def test_time_window_filters_evidence(seeded_claim, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from truce_adjudicator.main import explorer_agent
+
+    # Mock the explorer agent to prevent real API calls
+    monkeypatch.setattr(explorer_agent, "gather_sources", AsyncMock(return_value=[]))
+
     slug, recent_evidence, older_evidence = seeded_claim
 
     start = (recent_evidence.published_at - timedelta(days=2)).isoformat()
@@ -141,6 +162,9 @@ def test_fresh_evidence_discovery_after_cached_verification(seeded_claim, monkey
     from truce_adjudicator.mcp.explorer import ExplorerSource
 
     slug, _, _ = seeded_claim
+
+    # Mock explorer agent for all calls initially to prevent real API calls
+    monkeypatch.setattr(explorer_agent, "gather_sources", AsyncMock(return_value=[]))
 
     # First verification to establish a cached result
     first_response = client.post(f"/claims/{slug}/verify")
