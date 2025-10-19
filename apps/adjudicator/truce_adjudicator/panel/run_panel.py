@@ -40,6 +40,14 @@ from ..models import (
     TimeWindow,
     VerdictType,
 )
+
+
+class ProviderCallError(Exception):
+    """Exception raised when a provider call fails and should be treated as a failed evaluation."""
+    
+    def __init__(self, message: str, original_error: Optional[Exception] = None):
+        super().__init__(message)
+        self.original_error = original_error
 from .agentic_research import AgenticResearcher, SharedEvidencePool
 
 DEFAULT_PANEL_MODELS: List[str] = [
@@ -220,47 +228,15 @@ class BaseProviderAdapter:
                 raise ValueError("Empty provider response")
             return response
         except Exception as exc:
-            # Check if this is a "fatal" error that should cause the model to fail
-            # rather than fall back to stub responses
-            if self._should_fail_on_error(exc):
-                raise exc  # Let the outer evaluation loop handle this as a failure
-            else:
-                return self._fallback(prompt, error=str(exc))
-
-    def _should_fail_on_error(self, exc: Exception) -> bool:
-        """
-        Determine if an error should cause the model to fail completely
-        rather than fall back to stub responses.
-
-        JSON parsing errors and response format errors should cause failure,
-        while missing API keys should fall back to stubs.
-        """
-        error_msg = str(exc).lower()
-
-        # These errors should cause model failure (not stubs)
-        fatal_patterns = [
-            "could not parse provider payload",
-            "expecting ',' delimiter",
-            "expecting value:",
-            "json decode",
-            "invalid json",
-            "unterminated string",
-        ]
-
-        # However, for JSON parsing errors, let's be more lenient and try to recover
-        if any(
-            pattern in error_msg
-            for pattern in ["expecting ',' delimiter", "json decode", "invalid json"]
-        ):
-            return False  # Don't fail, let the improved JSON parser handle it
-
-        return any(pattern in error_msg for pattern in fatal_patterns)
+            # All provider failures should be treated as failed evaluations
+            # rather than falling back to stub responses that skew aggregation
+            raise ProviderCallError(
+                f"Provider call failed: {str(exc)}", 
+                original_error=exc
+            ) from exc
 
     async def _invoke(self, prompt: Dict[str, Any]) -> Any:
         raise NotImplementedError
-
-    def _fallback(self, prompt: Dict[str, Any], error: str = "") -> Dict[str, Any]:
-        return _generate_stub_payload(self.provider_id, self.model, prompt, error=error)
 
 
 class GPTProviderAdapter(BaseProviderAdapter):
