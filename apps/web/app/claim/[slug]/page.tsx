@@ -148,7 +148,7 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
           <ClaimVerdictDisplay 
             panelModels={panelModels}
             summary={panel.summary}
-            evidenceMap={evidenceMap}
+            evidenceMap={Array.from(evidenceMap.entries())}
           />
         ) : (
           <div className="text-center py-12">
