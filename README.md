@@ -169,7 +169,7 @@ FUSEKI_URL=http://localhost:3030       # RDF triple store
 - `GET /claims/{slug}` - Get claim with all evaluations
 - `POST /claims/{slug}/verify` - Run verification with evidence
 - `POST /claims/{slug}/panel/run` - Execute multi-model panel
-- `GET /claims/{slug}/session/{session_id}` - Poll async claim creation status
+- `GET /claims/progress/{session_id}` - Stream async claim creation progress (SSE)
 
 ### Evidence
 - `GET /evidence/{slug}` - Get evidence for a claim
