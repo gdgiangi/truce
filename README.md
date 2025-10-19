@@ -144,11 +144,6 @@ cp env.example apps/adjudicator/.env
 # Edit apps/adjudicator/.env with your keys
 make up
 ```
-
-📚 **Detailed guides:**
-- [API_SETUP.md](./API_SETUP.md) - Complete API configuration reference
-- [QUICK_START.md](./QUICK_START.md) - Step-by-step setup guide
-
 ### Environment Variables
 
 ```bash
