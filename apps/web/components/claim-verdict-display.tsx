@@ -90,11 +90,11 @@ function getProviderInfo(modelName: string): { name: string; logo: string; short
   };
 }
 
-function CitationHighlightedText({ 
-  text, 
-  citationLinks = [], 
+function CitationHighlightedText({
+  text,
+  citationLinks = [],
   evidenceMap,
-  onEvidenceClick 
+  onEvidenceClick
 }: {
   text: string;
   citationLinks?: CitationLink[];
@@ -148,11 +148,11 @@ function CitationHighlightedText({
   return <span>{elements}</span>;
 }
 
-function ModelArgumentCard({ 
-  modelVerdict, 
+function ModelArgumentCard({
+  modelVerdict,
   evidenceMap,
-  side 
-}: { 
+  side
+}: {
   modelVerdict: PanelModelVerdict;
   evidenceMap: Map<string, Evidence>;
   side: "support" | "refute";
@@ -186,11 +186,10 @@ function ModelArgumentCard({
             <p className="text-sm text-gray-500">{confidence}% confidence</p>
           </div>
         </div>
-        <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-          side === "support" 
+        <div className={`px-3 py-1 rounded-full text-xs font-medium ${side === "support"
             ? "bg-emerald-50 text-emerald-700"
             : "bg-rose-50 text-rose-700"
-        }`}>
+          }`}>
           {confidence}%
         </div>
       </div>
@@ -213,7 +212,7 @@ function ModelArgumentCard({
             {showEvidence ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             {argument.evidence_ids.length} evidence source{argument.evidence_ids.length !== 1 ? 's' : ''}
           </button>
-          
+
           {showEvidence && (
             <div className="mt-3 space-y-2">
               {argument.evidence_ids.map((citationId) => {
@@ -226,11 +225,10 @@ function ModelArgumentCard({
                     href={evidence.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`flex items-start gap-2 p-3 rounded-lg transition-colors group ${
-                      highlightedEvidenceId === citationId
+                    className={`flex items-start gap-2 p-3 rounded-lg transition-colors group ${highlightedEvidenceId === citationId
                         ? "bg-gray-200 border border-gray-400"
                         : "bg-gray-50 hover:bg-gray-100"
-                    }`}
+                      }`}
                     onMouseEnter={() => setHighlightedEvidenceId(citationId)}
                     onMouseLeave={() => setHighlightedEvidenceId(null)}
                   >
@@ -256,11 +254,11 @@ function ModelArgumentCard({
   );
 }
 
-export function ClaimVerdictDisplay({ 
-  panelModels, 
+export function ClaimVerdictDisplay({
+  panelModels,
   summary,
-  evidenceMap 
-}: { 
+  evidenceMap
+}: {
   panelModels: PanelModelVerdict[];
   summary: PanelSummary;
   evidenceMap: Record<string, Evidence>;
@@ -271,16 +269,16 @@ export function ClaimVerdictDisplay({
 
   const supportPercentage = Math.round(summary.support_confidence * 100);
   const refutePercentage = Math.round(summary.refute_confidence * 100);
-  
+
   const totalModels = panelModels.length;
   const failedModels = panelModels.filter(m => m.failed).length;
   const successfulModels = totalModels - failedModels;
 
-  const filteredModels = selectedSide === null 
-    ? panelModels 
+  const filteredModels = selectedSide === null
+    ? panelModels
     : selectedSide === "support"
-    ? panelModels.filter(m => m.approval_argument.confidence >= m.refusal_argument.confidence)
-    : panelModels.filter(m => m.refusal_argument.confidence > m.approval_argument.confidence);
+      ? panelModels.filter(m => m.approval_argument.confidence >= m.refusal_argument.confidence)
+      : panelModels.filter(m => m.refusal_argument.confidence > m.approval_argument.confidence);
 
   return (
     <>
@@ -293,13 +291,12 @@ export function ClaimVerdictDisplay({
             <button
               onClick={() => setSelectedSide(selectedSide === "support" ? null : "support")}
               style={{ width: `${supportPercentage}%` }}
-              className={`relative p-12 transition-all duration-500 ${
-                selectedSide === "support"
+              className={`relative p-12 transition-all duration-500 ${selectedSide === "support"
                   ? "bg-emerald-500 text-white scale-105 z-10"
                   : selectedSide === "refute"
-                  ? "bg-gray-100 text-gray-400"
-                  : "bg-gradient-to-br from-emerald-50 to-emerald-100 hover:from-emerald-100 hover:to-emerald-200 text-emerald-900"
-              }`}
+                    ? "bg-gray-100 text-gray-400"
+                    : "bg-gradient-to-br from-emerald-50 to-emerald-100 hover:from-emerald-100 hover:to-emerald-200 text-emerald-900"
+                }`}
             >
               <div className="text-center">
                 <div className="text-xs md:text-sm font-medium mb-2 uppercase tracking-wider">
@@ -318,13 +315,12 @@ export function ClaimVerdictDisplay({
             <button
               onClick={() => setSelectedSide(selectedSide === "refute" ? null : "refute")}
               style={{ width: `${refutePercentage}%` }}
-              className={`relative p-12 transition-all duration-500 ${
-                selectedSide === "refute"
+              className={`relative p-12 transition-all duration-500 ${selectedSide === "refute"
                   ? "bg-rose-500 text-white scale-105 z-10"
                   : selectedSide === "support"
-                  ? "bg-gray-100 text-gray-400"
-                  : "bg-gradient-to-br from-rose-50 to-rose-100 hover:from-rose-100 hover:to-rose-200 text-rose-900"
-              }`}
+                    ? "bg-gray-100 text-gray-400"
+                    : "bg-gradient-to-br from-rose-50 to-rose-100 hover:from-rose-100 hover:to-rose-200 text-rose-900"
+                }`}
             >
               <div className="text-center">
                 <div className="text-xs md:text-sm font-medium mb-2 uppercase tracking-wider">
@@ -374,7 +370,7 @@ export function ClaimVerdictDisplay({
               <ModelArgumentCard
                 key={`${modelVerdict.provider_id}-${modelVerdict.model}`}
                 modelVerdict={modelVerdict}
-                evidenceMap={evidenceMap}
+                evidenceMap={evidenceMapObj}
                 side={selectedSide}
               />
             ))}
@@ -400,7 +396,7 @@ export function ClaimVerdictDisplay({
           <div className="grid md:grid-cols-2 gap-6">
             {panelModels.map((modelVerdict) => {
               const providerInfo = getProviderInfo(modelVerdict.model || modelVerdict.provider_id);
-              
+
               // Check if this model failed
               if (modelVerdict.failed) {
                 return (
@@ -447,19 +443,19 @@ export function ClaimVerdictDisplay({
                   </div>
                 );
               }
-              
+
               // Normalize confidences to sum to 100%
               const rawApproval = modelVerdict.approval_argument.confidence;
               const rawRefusal = modelVerdict.refusal_argument.confidence;
               const total = rawApproval + rawRefusal;
-              
-              const approvalConf = total > 0 
+
+              const approvalConf = total > 0
                 ? Math.round((rawApproval / total) * 100)
                 : 50;
               const refusalConf = total > 0
                 ? Math.round((rawRefusal / total) * 100)
                 : 50;
-              
+
               const dominant = approvalConf >= refusalConf ? "support" : "refute";
 
               return (
@@ -484,29 +480,25 @@ export function ClaimVerdictDisplay({
 
                   {/* Proportional confidence bars */}
                   <div className="relative flex gap-1 h-16 rounded-xl overflow-hidden border border-gray-200">
-                    <div 
+                    <div
                       style={{ width: `${approvalConf}%` }}
-                      className={`flex flex-col items-center justify-center transition-all ${
-                        dominant === "support" ? "bg-emerald-100" : "bg-emerald-50"
-                      }`}
+                      className={`flex flex-col items-center justify-center transition-all ${dominant === "support" ? "bg-emerald-100" : "bg-emerald-50"
+                        }`}
                     >
                       <div className="text-xs font-medium text-gray-600 mb-0.5">Support</div>
-                      <div className={`text-lg font-bold ${
-                        dominant === "support" ? "text-emerald-700" : "text-gray-700"
-                      }`}>
+                      <div className={`text-lg font-bold ${dominant === "support" ? "text-emerald-700" : "text-gray-700"
+                        }`}>
                         {approvalConf}%
                       </div>
                     </div>
-                    <div 
+                    <div
                       style={{ width: `${refusalConf}%` }}
-                      className={`flex flex-col items-center justify-center transition-all ${
-                        dominant === "refute" ? "bg-rose-100" : "bg-rose-50"
-                      }`}
+                      className={`flex flex-col items-center justify-center transition-all ${dominant === "refute" ? "bg-rose-100" : "bg-rose-50"
+                        }`}
                     >
                       <div className="text-xs font-medium text-gray-600 mb-0.5">Refute</div>
-                      <div className={`text-lg font-bold ${
-                        dominant === "refute" ? "text-rose-700" : "text-gray-700"
-                      }`}>
+                      <div className={`text-lg font-bold ${dominant === "refute" ? "text-rose-700" : "text-gray-700"
+                        }`}>
                         {refusalConf}%
                       </div>
                     </div>

@@ -11,12 +11,6 @@ services:
       - ./apps/adjudicator:/app
     working_dir: /app
     command: fastmcp run truce_adjudicator/mcp/brave_search_server.py:mcp --transport http --host 0.0.0.0 --port 8888
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8888/mcp || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
 
   adjudicator:
     build:
@@ -40,8 +34,7 @@ services:
     working_dir: /app
     command: uvicorn truce_adjudicator.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
-      mcp-server:
-        condition: service_healthy
+      - mcp-server
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
@@ -55,7 +48,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - ADJUDICATOR_API_URL=http://adjudicator:8000
+      - NEXT_PUBLIC_ADJUDICATOR_API_URL=${NEXT_PUBLIC_ADJUDICATOR_API_URL}
+      - ADJUDICATOR_API_URL=${ADJUDICATOR_API_URL}
       - NODE_ENV=development
     volumes:
       - ./apps/web:/app

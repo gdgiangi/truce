@@ -290,7 +290,7 @@ class GPTProviderAdapter(BaseProviderAdapter):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": serialized},
             ],
-            max_tokens=2000,
+            max_tokens=8000,
             temperature=0.1,
             response_format={"type": "json_object"},
         )
@@ -331,7 +331,7 @@ class GrokProviderAdapter(BaseProviderAdapter):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": serialized},
             ],
-            max_tokens=2000,
+            max_tokens=8000,
             temperature=0.1,
         )
         content = completion.choices[0].message.content if completion.choices else ""
@@ -465,7 +465,7 @@ Respond with ONLY the JSON object. No markdown, no explanations, no code blocks.
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": serialized},
             ],
-            max_tokens=1500,
+            max_tokens=6000,
             temperature=0.1,
         )
         content = completion.choices[0].message.content if completion.choices else ""
@@ -504,7 +504,7 @@ class AnthropicProviderAdapter(BaseProviderAdapter):
 
         message = await self._client.messages.create(
             model=anthropic_model,
-            max_tokens=1500,
+            max_tokens=6000,
             temperature=0.1,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": serialized}],

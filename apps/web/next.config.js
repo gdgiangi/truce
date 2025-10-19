@@ -2,7 +2,7 @@
 const nextConfig = {
   env: {
     ADJUDICATOR_API_URL: process.env.ADJUDICATOR_API_URL || 'http://localhost:8000',
-    NEXT_PUBLIC_ADJUDICATOR_API_URL: process.env.ADJUDICATOR_API_URL || 'http://localhost:8000',
+    NEXT_PUBLIC_ADJUDICATOR_API_URL: process.env.NEXT_PUBLIC_ADJUDICATOR_API_URL || 'http://localhost:8000',
   },
   images: {
     remotePatterns: [

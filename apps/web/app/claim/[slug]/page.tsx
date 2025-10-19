@@ -91,11 +91,11 @@ async function getClaim(slug: string): Promise<ClaimResponse | null> {
     const response = await fetch(`${adjudicatorUrl}/claims/${slug}`, {
       cache: 'no-store'
     });
-    
+
     if (!response.ok) {
       return null;
     }
-    
+
     return response.json();
   } catch (error) {
     console.error('Error fetching claim:', error);
@@ -130,11 +130,11 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
               </Badge>
             )}
           </div>
-          
+
           <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 leading-tight">
             {claim.text}
           </h1>
-          
+
           <div className="flex items-center justify-center gap-6 text-sm text-gray-500">
             <span>{new Date(claim.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
             <span>•</span>
@@ -145,10 +145,10 @@ export default async function ClaimPage({ params }: { params: { slug: string } }
         </div>
 
         {panel ? (
-          <ClaimVerdictDisplay 
+          <ClaimVerdictDisplay
             panelModels={panelModels}
             summary={panel.summary}
-            evidenceMap={Array.from(evidenceMap.entries())}
+            evidenceMap={evidenceRecord}
           />
         ) : (
           <div className="text-center py-12">
