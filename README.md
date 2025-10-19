@@ -19,8 +19,6 @@ make dev
 
 Visit **http://localhost:3000** and enter any claim to analyze.
 
-> 💡 **New**: Agentic research is now enabled by default! Each AI agent conducts independent research using the Brave Search API. 
-
 ## What is Truce?
 
 Truce is a claim verification system that helps evaluate contentious statements through:
@@ -30,6 +28,21 @@ Truce is a claim verification system that helps evaluate contentious statements 
 📊 **Consensus Metrics**: Aggregate verdicts showing agreement levels and confidence  
 🔗 **Full Provenance**: Every piece of evidence tracked with timestamps and citations  
 ⚡ **FastMCP Integration**: Structured web search via Brave API exposed as MCP tools
+
+## How to help
+
+Truce is open to contributions of all sorts — from bug reports to new features, from documentation improvements to testing.  
+If you’d like to help, we recommend the following steps:
+
+1. Check out our [CONTRIBUTING.md](CONTRIBUTING.md) for a guide on how to get started.  
+2. Browse issues tagged **good-first-issue**, **help-wanted**, or **enhancement** for tasks that are great for contributors.  
+3. Found a bug? Report it with a clear description of what you expected, what happened, versions and environment.  
+4. Have an idea for a new feature? Open a discussion or issue and tell us your use-case, proposed interface and impact.  
+5. Ready to code? Fork the repo, create a branch, make your change, run tests/documentation updates, and open a pull request referencing the issue.  
+
+We’re grateful for your help—every contribution makes Truce stronger and more useful.
+
+> **Tip:** If you’re new to contributing, pick a small doc fix or a “good-first-issue” labelled task to get started. Welcome aboard!
 
 ## How It Works
 
@@ -43,9 +56,6 @@ Truce is a claim verification system that helps evaluate contentious statements 
 3. **Evidence pooling**: All sources deduplicated and shared across agents
 4. **Independent verdicts**: Each model analyzes ALL collected evidence
 5. **Consensus aggregation**: Majority vote with confidence scoring
-
-### Traditional Mode (Optional)
-Set `?agentic=false` to use deterministic evidence gathering with the original explorer agent pipeline.
 
 ## Architecture
 
@@ -74,23 +84,6 @@ Set `?agentic=false` to use deterministic evidence gathering with the original e
 │  GPT-4, Claude  │  (4+ independent researchers)
 │  Grok, Gemini   │
 └─────────────────┘
-```
-
-Directory structure:
-```
-truce/
-├── apps/
-│   ├── web/                          # Next.js frontend
-│   └── adjudicator/
-│       └── truce_adjudicator/
-│           ├── mcp/                  # FastMCP servers
-│           │   ├── brave_search_server.py
-│           │   └── explorer.py
-│           └── panel/                # Agentic research
-│               ├── agentic_research.py
-│               └── run_panel.py
-├── docs/                             # Documentation
-└── docker-compose.yml                # 3 services: web, api, mcp-server
 ```
 
 ## Features
@@ -162,31 +155,6 @@ VC_PRIVATE_KEY_BASE58=...
 FUSEKI_URL=http://localhost:3030       # RDF triple store
 ```
 
-## API Endpoints
-
-### Claims
-- `POST /claims/create-async` - Create claim and start analysis
-- `GET /claims/{slug}` - Get claim with all evaluations
-- `POST /claims/{slug}/verify` - Run verification with evidence
-- `POST /claims/{slug}/panel/run` - Execute multi-model panel
-- `GET /claims/progress/{session_id}` - Stream async claim creation progress (SSE)
-
-### Evidence
-- `GET /evidence/{slug}` - Get evidence for a claim
-- `POST /evidence/search` - Search evidence sources
-
-### Consensus  
-- `POST /consensus/{topic}/statements` - Add consensus statement
-- `POST /consensus/{topic}/votes` - Vote on statement
-- `GET /consensus/{topic}/summary` - Get consensus summary
-
-## Data Sources
-
-- **Statistics Canada**: Official government statistics (CSI, economic indicators)
-- **Brave Search**: Web evidence with source tracking
-- **MCP Agents**: Explorer and web search tools for evidence gathering
-- **Model APIs**: GPT-5, Claude Sonnet 4, Gemini 2.0, Grok Beta
-
 ## Limitations
 
 ⚠️ **Important Considerations**
@@ -231,13 +199,6 @@ cd apps/web
 npm test
 ```
 
-## Documentation
-
-- [API Reference](docs/API.md) - Complete API documentation
-- [Architecture Decisions](docs/) - ADRs and design docs
-- [Data Sources](docs/DATA-SOURCES.md) - Evidence source documentation
-- [NVC Guide](docs/NVC-GUIDE.md) - Nonviolent communication framework
-
 ## Technical Foundation
 
 - **W3C Verifiable Credentials**: Provenance tracking
@@ -248,16 +209,6 @@ npm test
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for new functionality
-4. Ensure all tests pass (`make test`)
-5. Submit a pull request
-
-See [.codex/guardrails.md](.codex/guardrails.md) for development guidelines.
 
 ---
 
