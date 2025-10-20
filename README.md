@@ -2,6 +2,10 @@
 
 **A transparent system for verifying contentious claims through multi-model AI analysis**
 
+<img width="1920" height="987" alt="Screenshot 2025-10-20 at 11 54 18 AM" src="https://github.com/user-attachments/assets/a2f0028c-1493-46e1-bf79-05cd5cbf5e8b" />
+
+> (Let's try and get this to 100%!)
+
 ## Quick Start
 
 ```bash
